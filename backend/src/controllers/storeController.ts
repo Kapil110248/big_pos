@@ -143,7 +143,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
 
     // Location-based filtering
     if (district || sector || cell) {
-        const conditions = [];
+        const conditions: any[] = [];
         if (district) conditions.push({ address: { contains: district as string, mode: 'insensitive' } });
         if (sector) conditions.push({ address: { contains: sector as string, mode: 'insensitive' } });
         if (cell) conditions.push({ address: { contains: cell as string, mode: 'insensitive' } });
@@ -158,7 +158,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
       where.shopName = { contains: search as string, mode: 'insensitive' };
     }
 
-    let retailers = await prisma.retailerProfile.findMany({
+    const retailers = await prisma.retailerProfile.findMany({
       where,
       include: {
         user: {
@@ -168,9 +168,9 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
             isActive: true,
           }
         },
-        // Get product count for each retailer
+        // Get products with stock > 0
         inventory: {
-          where: { quantity: { gt: 0 } },
+          where: { stock: { gt: 0 } },
           select: { id: true }
         },
         // Get linked wholesaler info
@@ -183,11 +183,11 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
     });
 
     // Filter only active retailers
-    retailers = retailers.filter(r => r.user?.isActive);
+    let activeRetailers = retailers.filter(r => r.user?.isActive);
 
     // Fallback: If strict location filtering returns no results, return all verified retailers
-    if (retailers.length === 0 && (district || sector || cell)) {
-        retailers = await prisma.retailerProfile.findMany({
+    if (activeRetailers.length === 0 && (district || sector || cell)) {
+        const fallbackRetailers = await prisma.retailerProfile.findMany({
             where: { isVerified: true },
             include: {
               user: {
@@ -198,7 +198,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
                 }
               },
               inventory: {
-                where: { quantity: { gt: 0 } },
+                where: { stock: { gt: 0 } },
                 select: { id: true }
               },
               linkedWholesaler: {
@@ -209,11 +209,11 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
             },
             take: 20
         });
-        retailers = retailers.filter(r => r.user?.isActive);
+        activeRetailers = fallbackRetailers.filter(r => r.user?.isActive);
     }
 
     // Format response with useful info for customers
-    const formattedRetailers = retailers.map(r => ({
+    const formattedRetailers = activeRetailers.map(r => ({
       id: r.id,
       shopName: r.shopName,
       address: r.address,
