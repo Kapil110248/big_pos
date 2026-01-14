@@ -144,9 +144,9 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
     // Location-based filtering
     if (district || sector || cell) {
         const conditions: any[] = [];
-        if (district) conditions.push({ address: { contains: district as string, mode: 'insensitive' } });
-        if (sector) conditions.push({ address: { contains: sector as string, mode: 'insensitive' } });
-        if (cell) conditions.push({ address: { contains: cell as string, mode: 'insensitive' } });
+        if (district) conditions.push({ address: { contains: district as string } });
+        if (sector) conditions.push({ address: { contains: sector as string } });
+        if (cell) conditions.push({ address: { contains: cell as string } });
 
         if (conditions.length > 0) {
             where.AND = conditions;
@@ -155,7 +155,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
 
     // Search by shop name
     if (search) {
-      where.shopName = { contains: search as string, mode: 'insensitive' };
+      where.shopName = { contains: search as string };
     }
 
     const retailers = await prisma.retailerProfile.findMany({
