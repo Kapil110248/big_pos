@@ -12,7 +12,13 @@ import {
   getRetailerOrders,
   getOrder,
   updateOrderStatus,
-  getCreditRequests
+  getCreditRequests,
+  // Link Request Management
+  getLinkRequests,
+  approveLinkRequest,
+  rejectLinkRequest,
+  getLinkedRetailers,
+  unlinkRetailer
 } from '../controllers/wholesalerController';
 import {
   getRetailers,
@@ -106,5 +112,12 @@ router.put('/settings', updateWholesalerSettings);
 router.get('/credit-requests', getCreditRequestsWithStats);
 router.post('/credit-requests/:id/approve', approveCreditRequest);
 router.post('/credit-requests/:id/reject', rejectCreditRequest);
+
+// Link Request Management (Retailer-Wholesaler Linking)
+router.get('/link-requests', getLinkRequests);
+router.post('/link-requests/:requestId/approve', approveLinkRequest);
+router.post('/link-requests/:requestId/reject', rejectLinkRequest);
+router.get('/linked-retailers', getLinkedRetailers);
+router.delete('/linked-retailers/:retailerId', unlinkRetailer);
 
 export default router;
