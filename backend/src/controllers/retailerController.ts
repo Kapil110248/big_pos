@@ -1365,6 +1365,17 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
             role: true,
             name: true,
           }
+        },
+        // Include linked wholesaler details
+        linkedWholesaler: {
+          include: {
+            user: {
+              select: {
+                phone: true,
+                email: true,
+              }
+            }
+          }
         }
       }
     });
@@ -1389,6 +1400,16 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       contact_person: retailerProfile.user?.name,
       is_verified: retailerProfile.isVerified,
       tinNumber: 'TIN123456789', // Placeholder as it's not in schema yet
+
+      // Linked Wholesaler Info (if linked)
+      linkedWholesaler: retailerProfile.linkedWholesaler ? {
+        id: retailerProfile.linkedWholesaler.id,
+        companyName: retailerProfile.linkedWholesaler.companyName,
+        contactPerson: retailerProfile.linkedWholesaler.contactPerson,
+        phone: retailerProfile.linkedWholesaler.user?.phone,
+        email: retailerProfile.linkedWholesaler.user?.email,
+        address: retailerProfile.linkedWholesaler.address,
+      } : null,
 
       // Default Settings
       settings: {

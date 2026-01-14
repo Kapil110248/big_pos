@@ -18,13 +18,41 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                         name: true
                     }
                 },
-                wallets: true
+                wallets: true,
+                // Include sales to find linked retailer
+                sales: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    include: {
+                        retailerProfile: {
+                            include: {
+                                user: {
+                                    select: {
+                                        phone: true,
+                                        email: true,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         });
 
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
+
+        // Get the retailer from the most recent sale
+        const lastSale = consumerProfile.sales?.[0];
+        const linkedRetailer = lastSale?.retailerProfile ? {
+            id: lastSale.retailerProfile.id,
+            shopName: lastSale.retailerProfile.shopName,
+            phone: lastSale.retailerProfile.user?.phone,
+            email: lastSale.retailerProfile.user?.email,
+            address: lastSale.retailerProfile.address,
+            lastPurchaseDate: lastSale.createdAt,
+        } : null;
 
         res.json({
             success: true,
@@ -36,7 +64,9 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                 address: consumerProfile.address,
                 landmark: consumerProfile.landmark,
                 is_verified: consumerProfile.isVerified,
-                membership_type: consumerProfile.membershipType
+                membership_type: consumerProfile.membershipType,
+                // Linked Retailer (from last purchase)
+                linkedRetailer: linkedRetailer
             }
         });
     } catch (error: any) {
