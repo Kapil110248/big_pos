@@ -15,6 +15,7 @@ import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { ShopPage } from './pages/consumer/ShopPage';
 import { OrdersPage as ConsumerOrdersPage } from './pages/consumer/OrdersPage';
+import { RetailersPage } from './pages/consumer/RetailersPage';
 import ConsumerWalletPage from './pages/consumer/WalletPage';
 import ConsumerProfilePage from './pages/consumer/ProfilePage';
 import GasPage from './pages/consumer/GasPage';
@@ -106,7 +107,8 @@ function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Navigate to="/consumer/shop" replace />} />
+              <Route index element={<Navigate to="/consumer/retailers" replace />} />
+              <Route path="retailers" element={<RetailersPage />} />
               <Route path="shop" element={<ShopPage />} />
               <Route path="orders" element={<ConsumerOrdersPage />} />
               <Route path="wallet" element={<ConsumerWalletPage />} />

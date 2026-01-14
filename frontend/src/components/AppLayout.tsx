@@ -38,6 +38,7 @@ const { Text } = Typography;
 // Menu items per role
 const menuItems: Record<UserRole, { key: string; icon: React.ReactNode; label: string; path: string; mobileLabel?: string }[]> = {
   consumer: [
+    { key: 'retailers', icon: <ShopOutlined />, label: 'Find Retailers', path: '/consumer/retailers', mobileLabel: 'Retailers' },
     { key: 'shop', icon: <ShoppingCartOutlined />, label: 'Shop', path: '/consumer/shop', mobileLabel: 'Shop' },
     { key: 'orders', icon: <InboxOutlined />, label: 'My Orders', path: '/consumer/orders', mobileLabel: 'My Orders' },
     { key: 'wallet', icon: <CreditCardOutlined />, label: 'Wallet & Cards', path: '/consumer/wallet', mobileLabel: 'Wallet' },
@@ -86,7 +87,7 @@ const menuItems: Record<UserRole, { key: string; icon: React.ReactNode; label: s
 // Mobile bottom nav items (limited to 5 most important items per role)
 // NOTE: Consumer has 'orders' instead of 'rewards' as per requirement
 const mobileBottomNavItems: Record<UserRole, string[]> = {
-  consumer: ['shop', 'orders', 'wallet', 'gas', 'profile'],
+  consumer: ['retailers', 'shop', 'orders', 'wallet', 'profile'],
   employee: ['attendance', 'projects', 'payslips', 'profile'],
   retailer: ['dashboard', 'pos', 'orders', 'wallet', 'management'],
   wholesaler: ['dashboard', 'orders', 'retailers', 'wallet', 'management'],
