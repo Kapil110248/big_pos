@@ -15,7 +15,7 @@ import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { ShopPage } from './pages/consumer/ShopPage';
 import { OrdersPage as ConsumerOrdersPage } from './pages/consumer/OrdersPage';
-import { RetailersPage } from './pages/consumer/RetailersPage';
+import { RetailersPage as ConsumerRetailersPage } from './pages/consumer/RetailersPage';
 import ConsumerWalletPage from './pages/consumer/WalletPage';
 import ConsumerProfilePage from './pages/consumer/ProfilePage';
 import GasPage from './pages/consumer/GasPage';
@@ -108,7 +108,7 @@ function App() {
               }
             >
               <Route index element={<Navigate to="/consumer/retailers" replace />} />
-              <Route path="retailers" element={<RetailersPage />} />
+              <Route path="retailers" element={<ConsumerRetailersPage />} />
               <Route path="shop" element={<ShopPage />} />
               <Route path="orders" element={<ConsumerOrdersPage />} />
               <Route path="wallet" element={<ConsumerWalletPage />} />
