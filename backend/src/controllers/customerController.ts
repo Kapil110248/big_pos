@@ -138,9 +138,33 @@ export const getWallets = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
 
-        const wallets = await prisma.wallet.findMany({
+        let wallets = await prisma.wallet.findMany({
             where: { consumerId: consumerProfile.id }
         });
+
+        // Lazy initialization: if no dashboard wallet exists, create it using legacy balance
+        let dashboardWallet = wallets.find(w => w.type === 'dashboard_wallet');
+        
+        if (!dashboardWallet) {
+            dashboardWallet = await prisma.wallet.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    type: 'dashboard_wallet',
+                    balance: consumerProfile.walletBalance || 0,
+                    currency: 'RWF'
+                }
+            });
+            wallets.push(dashboardWallet);
+        } else if (dashboardWallet.balance === 0 && (consumerProfile.walletBalance || 0) > 0) {
+            // One-time sync if wallet was created empty but legacy balance exists
+            dashboardWallet = await prisma.wallet.update({
+                where: { id: dashboardWallet.id },
+                data: { balance: consumerProfile.walletBalance || 0 }
+            });
+            // Update the wallet in the list
+            const idx = wallets.findIndex(w => w.id === dashboardWallet!.id);
+            if (idx !== -1) wallets[idx] = dashboardWallet;
+        }
 
         res.json({
             success: true,
@@ -417,7 +441,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
         recentOrders.forEach(order => {
             const timeAgo = getTimeAgo(order.createdAt);
             activities.push({
-                action: `${order.orderType === 'gas' ? 'Gas topup' : 'Shop'} order #${order.id.substring(0, 8)}`,
+                action: `${order.orderType === 'gas' ? 'Gas topup' : 'Shop'} order #${order.id.toString().substring(0, 8)}`,
                 time: timeAgo,
                 type: 'order',
                 created_at: order.createdAt
@@ -464,14 +488,15 @@ export const getNotificationPreferences = async (req: AuthRequest, res: Response
         }
 
         // Create default settings if none exist
-        let settings = (consumerProfile as any).settings;
+        let settings = consumerProfile.settings;
         if (!settings) {
-            settings = await (prisma as any).consumerSettings.create({
+            settings = await prisma.consumerSettings.create({
                 data: {
                     consumerId: consumerProfile.id,
                     pushNotifications: true,
                     emailNotifications: true,
-                    smsNotifications: false
+                    smsNotifications: false,
+                    updatedAt: new Date()
                 }
             });
         }
@@ -511,18 +536,22 @@ export const updateNotificationPreferences = async (req: AuthRequest, res: Respo
         if (email_notifications !== undefined) updateData.emailNotifications = email_notifications;
         if (sms_notifications !== undefined) updateData.smsNotifications = sms_notifications;
 
-        if ((consumerProfile as any).settings) {
+        if (consumerProfile.settings) {
             // Update existing settings
-            settings = await (prisma as any).consumerSettings.update({
-                where: { id: (consumerProfile as any).settings.id },
-                data: updateData
+            settings = await prisma.consumerSettings.update({
+                where: { id: consumerProfile.settings.id },
+                data: {
+                    ...updateData,
+                    updatedAt: new Date()
+                }
             });
         } else {
             // Create new settings
-            settings = await (prisma as any).consumerSettings.create({
+            settings = await prisma.consumerSettings.create({
                 data: {
                     consumerId: consumerProfile.id,
-                    ...updateData
+                    ...updateData,
+                    updatedAt: new Date()
                 }
             });
         }
@@ -573,7 +602,7 @@ export const getReferralCode = async (req: AuthRequest, res: Response) => {
 
         // Generate referral code from user ID (deterministic)
         // Format: BIG + last 6 chars of user ID in uppercase
-        const referralCode = 'BIG' + user.id.slice(-6).toUpperCase();
+        const referralCode = 'BIG' + user.id.toString().slice(-6).toUpperCase();
 
         res.json({
             success: true,

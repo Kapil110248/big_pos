@@ -14,7 +14,9 @@ import {
   Col,
   Select,
   InputNumber,
-  Tooltip
+  Tooltip,
+  Alert,
+  Divider
 } from 'antd';
 import {
   PlusOutlined,
@@ -25,7 +27,13 @@ import {
   SearchOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  StopOutlined
+  StopOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  LockOutlined,
+  EnvironmentOutlined,
+  InfoCircleOutlined,
+  EyeOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { adminApi } from '../../services/apiService';
@@ -35,7 +43,7 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 interface Retailer {
-  id: string;
+  id: number;
   store_name: string;
   owner_name: string;
   phone: string;
@@ -51,7 +59,9 @@ const RetailerManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [retailers, setRetailers] = useState<Retailer[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewModalVisible, setViewModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [selectedRetailer, setSelectedRetailer] = useState<any>(null);
   const [form] = Form.useForm();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -64,7 +74,7 @@ const RetailerManagementPage: React.FC = () => {
     setLoading(true);
     try {
       const response = await adminApi.getRetailers();
-      if (response.data?.retailers) {
+      if (response.data?.success) {
         const mappedRetailers = response.data.retailers.map((r: any) => ({
           id: r.id,
           store_name: r.shopName,
@@ -78,11 +88,7 @@ const RetailerManagementPage: React.FC = () => {
           created_at: r.createdAt
         }));
 
-        const filtered = statusFilter === 'all'
-          ? mappedRetailers
-          : mappedRetailers.filter((r: Retailer) => r.status === statusFilter);
-
-        setRetailers(filtered);
+        setRetailers(mappedRetailers);
       }
     } catch (error: any) {
       console.error('Failed to load retailers:', error);
@@ -96,12 +102,13 @@ const RetailerManagementPage: React.FC = () => {
     try {
       setLoading(true);
       if (editingId) {
-        await adminApi.updateRetailer(editingId, {
-          business_name: values.store_name, // Map form field to API expected field
+        await adminApi.updateRetailer(editingId.toString(), {
+          business_name: values.store_name,
           email: values.email,
           phone: values.phone,
           address: values.location,
           credit_limit: values.credit_limit,
+          status: values.status || 'active'
         });
         message.success('Retailer updated successfully');
       } else {
@@ -113,14 +120,14 @@ const RetailerManagementPage: React.FC = () => {
           address: values.location,
           credit_limit: values.credit_limit,
         });
-        message.success('Retailer created successfully');
+        message.success('Retailer account created successfully');
       }
       setModalVisible(false);
       form.resetFields();
       setEditingId(null);
       loadRetailers();
     } catch (error: any) {
-      message.error(error.response?.data?.message || 'Failed to save retailer');
+      message.error(error.response?.data?.error || 'Failed to save retailer');
     } finally {
       setLoading(false);
     }
@@ -134,19 +141,20 @@ const RetailerManagementPage: React.FC = () => {
       phone: record.phone,
       location: record.location,
       credit_limit: record.credit_limit,
+      status: record.status
     });
     setModalVisible(true);
   };
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = (id: number, name: string) => {
     Modal.confirm({
-      title: 'Delete Retailer',
-      content: `Are you sure you want to delete ${name}? This action cannot be undone.`,
-      okText: 'Delete',
+      title: 'Delete Retailer Account',
+      content: `Are you sure you want to permanently delete the account for ${name}? This action cannot be undone.`,
+      okText: 'Delete Account',
       okType: 'danger',
       onOk: async () => {
         try {
-          await adminApi.deleteRetailer(id);
+          await adminApi.deleteRetailer(id.toString());
           message.success('Retailer deleted successfully');
           loadRetailers();
         } catch (error: any) {
@@ -159,162 +167,213 @@ const RetailerManagementPage: React.FC = () => {
   const handleStatusChange = async (record: Retailer) => {
     const newStatus = record.status === 'active' ? false : true;
     try {
-      await adminApi.updateRetailerStatus(record.id, newStatus);
-      message.success(`Retailer ${newStatus ? 'activated' : 'deactivated'} successfully`);
+      await adminApi.updateRetailerStatus(record.id.toString(), newStatus);
+      message.success(`Account ${newStatus ? 'activated' : 'deactivated'} successfully`);
       loadRetailers();
     } catch (error: any) {
       message.error('Failed to update status');
     }
   };
 
+  const handleView = async (record: Retailer) => {
+    try {
+      const response = await adminApi.getRetailer(record.id.toString());
+      if (response.data?.success) {
+        setSelectedRetailer(response.data.retailer);
+        setViewModalVisible(true);
+      }
+    } catch (error) {
+      // If detailed API fails, use table data
+      setSelectedRetailer(record);
+      setViewModalVisible(true);
+    }
+  };
+
   const filteredRetailers = retailers.filter(r => {
-    return (
+    const matchesSearch = !searchText || (
       r.store_name?.toLowerCase().includes(searchText.toLowerCase()) ||
       r.owner_name?.toLowerCase().includes(searchText.toLowerCase()) ||
       r.phone?.includes(searchText) ||
       r.email?.toLowerCase().includes(searchText.toLowerCase())
     );
+    const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
   const columns: ColumnsType<Retailer> = [
     {
-      title: 'Store Name',
+      title: 'BUSINESS NAME',
       key: 'store_name',
       render: (_, record) => (
-        <Space>
-          <ShopOutlined />
-          <strong>{record.store_name}</strong>
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ color: '#1890ff' }}>{record.store_name}</Text>
+          <Text type="secondary" style={{ fontSize: '12px' }}>ID: {record.id}</Text>
         </Space>
       ),
     },
     {
-      title: 'Owner',
-      dataIndex: 'owner_name',
-      key: 'owner_name',
-    },
-    {
-      title: 'Contact',
+      title: 'CONTACT DETAILS',
       key: 'contact',
       render: (_, record) => (
-        <div style={{ fontSize: '12px' }}>
-          <div>{record.phone}</div>
-          <div style={{ color: '#888' }}>{record.email}</div>
-        </div>
+        <Space direction="vertical" size={0}>
+          <Space><PhoneOutlined style={{ fontSize: '12px', color: '#8c8c8c' }} /> <Text style={{ fontSize: '13px' }}>{record.phone}</Text></Space>
+          <Space><MailOutlined style={{ fontSize: '12px', color: '#8c8c8c' }} /> <Text type="secondary" style={{ fontSize: '12px' }}>{record.email}</Text></Space>
+        </Space>
       ),
     },
     {
-      title: 'Location',
+      title: 'LOCATION',
       dataIndex: 'location',
       key: 'location',
+      render: (text) => text || 'N/A'
     },
     {
-      title: 'Credit Limit',
+      title: 'CREDIT LIMIT',
       dataIndex: 'credit_limit',
       key: 'credit_limit',
-      render: (val) => `${(val || 0).toLocaleString()} RWF`,
+      render: (val) => <Text strong>{(val || 0).toLocaleString()} RWF</Text>,
     },
     {
-      title: 'Status',
+      title: 'STATUS',
       key: 'status',
       render: (_, record) => {
-        let color = 'default';
-        let icon = null;
-        if (record.status === 'active') { color = 'green'; icon = <CheckCircleOutlined />; }
-        else if (record.status === 'suspended') { color = 'red'; icon = <StopOutlined />; }
-        else if (record.status === 'inactive') { color = 'red'; icon = <CloseCircleOutlined />; }
-        else if (record.status === 'pending') { color = 'gold'; }
-
+        const isActive = record.status === 'active';
         return (
-          <Tag color={color} icon={icon}>
-            {record.status.toUpperCase()}
+          <Tag color={isActive ? 'success' : 'error'} style={{ borderRadius: '4px', textTransform: 'uppercase', fontWeight: 600 }}>
+            {isActive ? 'Active' : 'Deactivated'}
           </Tag>
         );
       },
     },
     {
-      title: 'Actions',
+      title: 'ACTIONS',
       key: 'actions',
+      align: 'right',
       render: (_, record) => (
         <Space>
-          <Tooltip title="Edit">
+          <Tooltip title="View Details">
             <Button
-              type="primary"
-              ghost
-              icon={<EditOutlined />}
-              size="small"
+              type="text"
+              icon={<EyeOutlined />}
+              onClick={() => handleView(record)}
+            />
+          </Tooltip>
+          <Tooltip title="Edit Profile">
+            <Button
+              type="text"
+              icon={<EditOutlined style={{ color: '#1890ff' }} />}
               onClick={() => handleEdit(record)}
             />
           </Tooltip>
-
           <Tooltip title={record.status === 'active' ? "Deactivate" : "Activate"}>
             <Button
-              type={record.status === 'active' ? 'default' : 'primary'}
-              danger={record.status === 'active'}
-              icon={record.status === 'active' ? <StopOutlined /> : <CheckCircleOutlined />}
-              size="small"
+              type="text"
+              icon={record.status === 'active' ? <StopOutlined style={{ color: '#ff4d4f' }} /> : <CheckCircleOutlined style={{ color: '#52c41a' }} />}
               onClick={() => handleStatusChange(record)}
             />
           </Tooltip>
-
-          <Tooltip title="Delete">
-            <Button
-              type="primary"
-              danger
-              icon={<DeleteOutlined />}
-              size="small"
-              onClick={() => handleDelete(record.id, record.store_name)}
-            />
-          </Tooltip>
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record.id, record.store_name)}
+          />
         </Space>
       ),
     },
   ];
 
+  const stats = [
+    { title: 'Total Retailers', value: retailers.length, color: '#1890ff' },
+    { title: 'Active Accounts', value: retailers.filter(r => r.status === 'active').length, color: '#52c41a' },
+    { title: 'Pending Verification', value: retailers.filter(r => r.status === 'pending').length, color: '#faad14' },
+    { title: 'Total Credit Limit', value: `${retailers.reduce((acc, curr) => acc + (curr.credit_limit || 0), 0).toLocaleString()} RWF`, color: '#722ed1' },
+  ];
+
   return (
-    <div>
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2} style={{ margin: 0 }}>Retailer Management</Title>
-          <Text type="secondary">Manage retailer accounts</Text>
-        </div>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={loadRetailers}>Refresh</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
-            setEditingId(null);
-            form.resetFields();
-            setModalVisible(true);
-          }}>
-            Add Retailer
-          </Button>
-        </Space>
+    <div style={{ background: '#f0f2f5', minHeight: '100vh' }}>
+      {/* Blue Header Banner */}
+      <div style={{ 
+        background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)', 
+        padding: '32px 24px', 
+        color: 'white',
+        marginBottom: '24px'
+      }}>
+        <Row justify="space-between" align="middle">
+          <Col>
+            <Title level={2} style={{ color: 'white', margin: 0 }}>Retailer Management</Title>
+            <Text style={{ color: 'rgba(255,255,255,0.85)' }}>Manage and monitor all registered retailer accounts in the system</Text>
+          </Col>
+          <Col>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />} 
+              size="large"
+              style={{ background: 'white', color: '#1890ff', border: 'none', fontWeight: 600 }}
+              onClick={() => {
+                setEditingId(null);
+                form.resetFields();
+                setModalVisible(true);
+              }}
+            >
+              CREATE NEW RETAILER
+            </Button>
+          </Col>
+        </Row>
       </div>
 
-      <Card>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-          <Input
-            prefix={<SearchOutlined />}
-            placeholder="Search by store, owner, email, or phone"
-            style={{ width: 300 }}
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-          />
-          <Select defaultValue="all" style={{ width: 120 }} onChange={setStatusFilter}>
-            <Option value="all">All Status</Option>
-            <Option value="active">Active</Option>
-            <Option value="inactive">Inactive</Option>
-          </Select>
-        </div>
-        <Table
-          columns={columns}
-          dataSource={filteredRetailers}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
-      </Card>
+      <div style={{ padding: '0 24px 24px' }}>
+        {/* Stats Row */}
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          {stats.map((stat, index) => (
+            <Col span={6} key={index}>
+              <Card bordered={false} bodyStyle={{ padding: '20px' }} style={{ borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <Text type="secondary" style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{stat.title}</Text>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: stat.color, marginTop: '8px' }}>{stat.value}</div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
 
+        <Card bordered={false} style={{ borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between' }}>
+            <Input
+              prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+              placeholder="Search by store name, owner, or contact..."
+              style={{ width: 400, borderRadius: '6px' }}
+              size="large"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+            />
+            <Space>
+              <Text strong>Filter by:</Text>
+              <Select defaultValue="all" style={{ width: 140 }} onChange={setStatusFilter}>
+                <Option value="all">All Status</Option>
+                <Option value="active">Active</Option>
+                <Option value="inactive">Inactive</Option>
+                <Option value="pending">Pending</Option>
+              </Select>
+              <Button icon={<ReloadOutlined />} onClick={loadRetailers}>Refresh</Button>
+            </Space>
+          </div>
+          <Table
+            columns={columns}
+            dataSource={filteredRetailers}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10, showSizeChanger: true }}
+            style={{ borderRadius: '8px' }}
+          />
+        </Card>
+      </div>
+
+      {/* Modern Creation Modal */}
       <Modal
-        title={editingId ? 'Edit Retailer' : 'Add Retailer'}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShopOutlined /> {editingId ? 'Edit Retailer Profile' : 'Create Retailer Account'}
+          </div>
+        }
         open={modalVisible}
         onCancel={() => {
           setModalVisible(false);
@@ -322,82 +381,214 @@ const RetailerManagementPage: React.FC = () => {
           setEditingId(null);
         }}
         footer={null}
-        width={700}
+        width={650}
+        style={{ top: 20 }}
       >
         <Form
           form={form}
           layout="vertical"
           onFinish={handleSave}
+          requiredMark="optional"
+          style={{ paddingTop: 10 }}
         >
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="store_name"
-                label="Store Name"
-                rules={[{ required: true, message: 'Required' }]}
-              >
-                <Input placeholder="Tech Store Ltd" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="phone"
-                label="Phone"
-                rules={[{ required: true, message: 'Required' }]}
-              >
-                <Input placeholder="+250..." />
-              </Form.Item>
-            </Col>
-          </Row>
+          {!editingId && (
+             <Alert
+               message="An activation email will be sent to the retailer."
+               type="info"
+               showIcon
+               style={{ marginBottom: 24, borderRadius: '8px' }}
+             />
+          )}
+
+          <Form.Item
+            name="store_name"
+            label={<Text strong>Business Name <Text type="danger">*</Text></Text>}
+            rules={[{ required: true, message: 'Please enter business name' }]}
+          >
+            <Input prefix={<ShopOutlined style={{ color: '#bfbfbf' }} />} placeholder="e.g., Kigali Shop Ltd" size="large" />
+          </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="email"
-                label="Email"
-                rules={[{ required: true, type: 'email' }]}
+                label={<Text strong>Email <Text type="danger">*</Text></Text>}
+                rules={[{ required: true, type: 'email', message: 'Valid email required' }]}
               >
-                <Input placeholder="store@example.com" />
+                <Input prefix={<MailOutlined style={{ color: '#bfbfbf' }} />} placeholder="retailer@example.com" size="large" />
               </Form.Item>
             </Col>
-            {!editingId && (
-              <Col span={12}>
-                <Form.Item
-                  name="password"
-                  label="Password"
-                  rules={[{ required: true, min: 8 }]}
-                >
-                  <Input.Password placeholder="Min 8 chars" />
-                </Form.Item>
-              </Col>
-            )}
+            <Col span={12}>
+              <Form.Item
+                name="phone"
+                label={<Text strong>Phone <Text type="danger">*</Text></Text>}
+                rules={[{ required: true, message: 'Phone number required' }]}
+              >
+                <Input prefix={<PhoneOutlined style={{ color: '#bfbfbf' }} />} placeholder="+250788123456" size="large" />
+              </Form.Item>
+            </Col>
           </Row>
+
+          {!editingId && (
+            <Form.Item
+              name="password"
+              label={<Text strong>Initial Password <Text type="danger">*</Text></Text>}
+              rules={[{ required: true, min: 8, message: 'Minimum 8 characters' }]}
+            >
+              <Input.Password prefix={<LockOutlined style={{ color: '#bfbfbf' }} />} placeholder="Temporary password" size="large" />
+            </Form.Item>
+          )}
 
           <Form.Item
             name="location"
-            label="Address / Location"
+            label={<Text strong>Business Address</Text>}
           >
-            <TextArea rows={2} placeholder="Kigali, Rwanda..." />
+            <TextArea rows={3} placeholder="Street, District, City" style={{ borderRadius: '8px' }} />
           </Form.Item>
 
           <Form.Item
             name="credit_limit"
-            label="Credit Limit (RWF)"
+            label={<Text strong>Initial Credit Limit (RWF)</Text>}
             initialValue={0}
           >
-            <InputNumber style={{ width: '100%' }} formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} parser={(value) => value?.replace(/\$\s?|(,*)/g, '') as unknown as number} />
+            <InputNumber 
+              style={{ width: '100%' }} 
+              size="large"
+              placeholder="0"
+              formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
+              parser={(value) => value?.replace(/\$\s?|(,*)/g, '') as unknown as number} 
+            />
           </Form.Item>
 
+          <Divider style={{ margin: '24px 0 16px' }} />
+
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => setModalVisible(false)}>Cancel</Button>
-              <Button type="primary" htmlType="submit" loading={loading}>
-                {editingId ? 'Update' : 'Create'}
+            <Space size="middle">
+              <Button onClick={() => setModalVisible(false)} size="large" style={{ borderRadius: '6px', minWidth: 100 }}>
+                Cancel
+              </Button>
+              <Button type="primary" htmlType="submit" loading={loading} size="large" style={{ borderRadius: '6px', background: '#1890ff', minWidth: 150 }}>
+                {editingId ? 'Update Profile' : 'Create Account'}
               </Button>
             </Space>
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* Retailer Details Modal */}
+      <Modal
+        title={<span className="text-lg font-bold">Retailer Details</span>}
+        open={viewModalVisible}
+        onCancel={() => {
+          setViewModalVisible(false);
+          setSelectedRetailer(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setViewModalVisible(false);
+            setSelectedRetailer(null);
+          }}>
+            Close
+          </Button>
+        ]}
+        width={800}
+        centered
+      >
+        {selectedRetailer && (
+          <div className="py-4">
+            <Row gutter={[24, 24]}>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Retailer ID</Text><br/>
+                <Text strong className="text-base">{selectedRetailer.id}</Text>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Status</Text><br/>
+                <Tag color={selectedRetailer.status === 'active' ? 'green' : 'red'}>
+                  {selectedRetailer.status?.toUpperCase()}
+                </Tag>
+              </Col>
+
+              <Col span={24}>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <Text strong className="text-sm">Business Information</Text>
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Business Name</Text><br/>
+                <Text strong>{selectedRetailer.store_name || selectedRetailer.shopName}</Text>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Owner Name</Text><br/>
+                <Text>{selectedRetailer.owner_name || selectedRetailer.user?.name || 'N/A'}</Text>
+              </Col>
+
+              <Col span={24}>
+                <div className="bg-gray-50 p-4 rounded-lg mt-2">
+                  <Text strong className="text-sm">Contact Information</Text>
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Phone</Text><br/>
+                <Text>{selectedRetailer.phone || selectedRetailer.user?.phone}</Text>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Email</Text><br/>
+                <Text>{selectedRetailer.email || selectedRetailer.user?.email}</Text>
+              </Col>
+              <Col span={24}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Business Address</Text><br/>
+                <Text>{selectedRetailer.location || selectedRetailer.address || 'N/A'}</Text>
+              </Col>
+
+              <Col span={24}>
+                <div className="bg-gray-50 p-4 rounded-lg mt-2">
+                  <Text strong className="text-sm">Financial Information</Text>
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Credit Limit</Text><br/>
+                <Text strong className="text-lg text-blue-600">{(selectedRetailer.credit_limit || selectedRetailer.creditLimit || 0).toLocaleString()} RWF</Text>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Current Balance</Text><br/>
+                <Text strong className="text-lg">{(selectedRetailer.current_balance || 0).toLocaleString()} RWF</Text>
+              </Col>
+
+              <Col span={24}>
+                <div className="bg-gray-50 p-4 rounded-lg mt-2">
+                  <Text strong className="text-sm">Account Information</Text>
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Created At</Text><br/>
+                <Text>{selectedRetailer.created_at ? new Date(selectedRetailer.created_at).toLocaleString() : selectedRetailer.createdAt ? new Date(selectedRetailer.createdAt).toLocaleString() : 'N/A'}</Text>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" className="text-xs uppercase font-semibold">Account Status</Text><br/>
+                <Tag color={selectedRetailer.user?.isActive ? 'green' : 'red'}>
+                  {selectedRetailer.user?.isActive ? 'Active' : 'Inactive'}
+                </Tag>
+              </Col>
+            </Row>
+          </div>
+        )}
+      </Modal>
+
+      <style>{`
+        .ant-table-thead > tr > th {
+          background: #fafafa;
+          font-weight: 700;
+          font-size: 11px;
+          letter-spacing: 0.5px;
+          color: #8c8c8c;
+        }
+        .ant-card {
+          border-radius: 8px;
+        }
+        .ant-btn-primary {
+          box-shadow: 0 2px 0 rgba(24, 144, 255, 0.1);
+        }
+      `}</style>
     </div>
   );
 };

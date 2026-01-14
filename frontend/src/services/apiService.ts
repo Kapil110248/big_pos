@@ -51,7 +51,7 @@ export const employeeApi = {
 // Consumer/Shop APIs
 export const consumerApi = {
   // Retailers
-  getRetailers: (params?: { lat?: number; lng?: number }) =>
+  getRetailers: (params?: { lat?: number; lng?: number; district?: string; sector?: string; cell?: string }) =>
     api.get("/store/retailers", { params }),
 
   // Categories
@@ -110,8 +110,10 @@ export const consumerApi = {
   addGasMeter: (data: { meter_number: string; alias_name: string; owner_name: string; owner_phone: string }) =>
     api.post("/store/gas/meters", data),
   removeGasMeter: (id: string) => api.delete(`/store/gas/meters/${id}`),
-  topupGas: (data: { meter_number: string; amount: number; payment_method: string }) =>
+  topupGas: (data: { meter_number: string; amount: number; payment_method: string; card_id?: number | null }) =>
     api.post("/store/gas/topup", data),
+  recordGasUsage: (data: { meter_number: string; units_used: number; activity: string }) =>
+    api.post("/store/gas/usage", data),
   getGasHistory: () => api.get("/store/gas/usage"),
 
   // Rewards
@@ -141,6 +143,11 @@ export const consumerApi = {
   repayLoan: (id: string, data: { amount: number; payment_method: string }) =>
     api.post(`/store/loans/${id}/repay`, data),
   getFoodCredit: () => api.get("/store/loans/food-credit"),
+  
+  // Profile
+  getProfile: () => api.get("/store/customers/me"),
+  updateProfile: (data: { full_name?: string; address?: string; landmark?: string }) => 
+    api.put("/store/customers/me", data),
 };
 
 // Retailer APIs
@@ -393,6 +400,8 @@ export const nfcApi = {
   setPrimaryCard: (cardId: string) => api.put(`/nfc/cards/${cardId}/primary`),
   updateCardNickname: (cardId: string, nickname: string) =>
     api.put(`/nfc/cards/${cardId}/nickname`, { nickname }),
+  topUpCard: (cardId: string, data: { amount: number; pin?: string }) =>
+    api.post(`/nfc/cards/${cardId}/topup`, data),
   getCardOrders: (cardId: string) => api.get(`/nfc/cards/${cardId}/orders`),
 
   // POS NFC operations (for retailers)
@@ -533,8 +542,22 @@ export const adminApi = {
 
   // NFC Cards
   getNFCCards: (params?: any) => api.get("/admin/nfc-cards", { params }),
-  registerNFCCard: (uid: string, pin?: string) =>
-    api.post("/admin/nfc-cards", { uid, pin }),
+  registerNFCCard: (data: {
+    uid: string;
+    pin?: string;
+    cardType?: string;
+    cardholderName?: string;
+    nationalId?: string;
+    phone?: string;
+    email?: string;
+    province?: string;
+    district?: string;
+    sector?: string;
+    cell?: string;
+    streetAddress?: string;
+    landmark?: string;
+    userId?: string;
+  }) => api.post("/admin/nfc-cards", data),
   blockNFCCard: (id: string) =>
     api.put(`/admin/nfc-cards/${id}/block`),
   activateNFCCard: (id: string) =>
@@ -558,10 +581,23 @@ export const adminApi = {
   // Audit Logs
   getAuditLogs: (params?: any) => api.get("/admin/audit-logs", { params }),
 
+  // Products
+  getProducts: (params?: any) => api.get("/admin/products", { params }),
+  createProduct: (data: any) => api.post("/admin/products", data),
+  updateProduct: (id: string, data: any) => api.put(`/admin/products/${id}`, data),
+  deleteProduct: (id: string) => api.delete(`/admin/products/${id}`),
+
   // Settings
   getSettings: () => api.get("/admin/settings"),
   updateSettings: (settings: Record<string, any>) =>
     api.post("/admin/settings", { settings }),
+
+  // System Config
+  getSystemConfig: () => api.get("/admin/system-config"),
+  updateSystemConfig: (data: any) => api.put("/admin/system-config", data),
+
+  // Reports
+  getReports: (params?: any) => api.get("/admin/reports", { params }),
 };
 
 // General Auth APIs (Protected)

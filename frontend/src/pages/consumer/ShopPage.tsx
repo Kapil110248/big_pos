@@ -40,8 +40,9 @@ import {
   PhoneOutlined,
   CheckCircleOutlined,
   LockOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
-import { consumerApi } from '../../services/apiService';
+import { consumerApi, nfcApi } from '../../services/apiService';
 import { useCart, Retailer } from '../../contexts/CartContext';
 
 const { Title, Text, Paragraph } = Typography;
@@ -89,6 +90,7 @@ export const ShopPage: React.FC = () => {
     clearCart,
     selectRetailer,
     getItemQuantity,
+    removeItem,
   } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -101,11 +103,21 @@ export const ShopPage: React.FC = () => {
   const [showRetailerModal, setShowRetailerModal] = useState(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [showLocationModal, setShowLocationModal] = useState(true);
-  const [customerLocation, setCustomerLocation] = useState<CustomerLocation | null>(null);
+
+  const [customerLocation, setCustomerLocation] = useState<CustomerLocation | null>(() => {
+    try {
+      const saved = localStorage.getItem('bigcompany_location');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [showLocationModal, setShowLocationModal] = useState(!customerLocation);
   const [locationForm] = Form.useForm();
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'wallet' | 'mobile_money'>('wallet');
+  const [paymentMethod, setPaymentMethod] = useState<'wallet' | 'mobile_money' | 'nfc_card'>('wallet');
+  const [nfcCards, setNfcCards] = useState<any[]>([]);
   const [checkoutForm] = Form.useForm();
   const [processingPayment, setProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -117,18 +129,55 @@ export const ShopPage: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const [r, c] = await Promise.all([consumerApi.getRetailers(), consumerApi.getCategories()]);
-        setRetailers(r.data.retailers || []);
+        const [c, profileRes, cardsRes] = await Promise.all([
+          consumerApi.getCategories(),
+          consumerApi.getProfile(),
+          nfcApi.getMyCards()
+        ]);
         setCategories(c.data.categories || []);
+        if (cardsRes.data.success) {
+          setNfcCards(cardsRes.data.data || []);
+        }
+
+        let currentLocation = customerLocation;
+
+        // If no location in localStorage, try loading from profile
+        if (!currentLocation && profileRes.data.success && profileRes.data.data.address) {
+          const addr = profileRes.data.data.address;
+          const parts = addr.split(',').map((p: string) => p.trim());
+          if (parts.length >= 2) {
+            const loc = {
+              cell: parts.length === 3 ? parts[0] : '',
+              sector: parts.length === 3 ? parts[1] : parts[0],
+              district: parts.length === 3 ? parts[2] : parts[1]
+            };
+            currentLocation = loc;
+            setCustomerLocation(loc);
+            localStorage.setItem('bigcompany_location', JSON.stringify(loc));
+            setShowLocationModal(false);
+          }
+        }
+
+        // Auto-fetch stores if location exists (either from localStorage or profile)
+        if (currentLocation) {
+          const response = await consumerApi.getRetailers({
+            district: currentLocation.district,
+            sector: currentLocation.sector,
+            cell: currentLocation.cell
+          });
+          setRetailers(response.data.retailers || []);
+          if (!selectedRetailer && response.data.retailers?.length > 0) {
+            setShowRetailerModal(true);
+          }
+        }
       } catch (error) {
         console.error("Error fetching shop data:", error);
-        message.error("Failed to load retailers and categories");
-        setRetailers([]);
+        message.error("Failed to load initial shop data");
         setCategories([]);
       } finally { setLoading(false); }
     };
     init();
-  }, []);
+  }, [customerLocation, selectedRetailer]);
 
   const fetchProducts = useCallback(async () => {
     if (!selectedRetailer) return;
@@ -158,10 +207,37 @@ export const ShopPage: React.FC = () => {
     });
   }, [products, searchQuery, selectedCategory]);
 
-  const handleLocationSubmit = (v: CustomerLocation) => {
+  const handleLocationSubmit = async (v: CustomerLocation) => {
     setCustomerLocation(v);
-    setShowLocationModal(false);
-    setShowRetailerModal(true);
+    localStorage.setItem('bigcompany_location', JSON.stringify(v));
+    
+    setLoading(true);
+    try {
+      // Formatted address for database
+      const addressString = `${v.cell}, ${v.sector}, ${v.district}`;
+      
+      // Save to database
+      await consumerApi.updateProfile({ address: addressString });
+
+      const response = await consumerApi.getRetailers({
+        district: v.district,
+        sector: v.sector,
+        cell: v.cell
+      });
+      setRetailers(response.data.retailers || []);
+      if (response.data.retailers?.length === 0) {
+        message.info("No stores found in this location");
+      } else {
+        message.success(`Location saved and ${response.data.retailers.length} stores found`);
+      }
+    } catch (error) {
+      console.error("Error updating location:", error);
+      message.error("Failed to save location to profile");
+    } finally {
+      setLoading(false);
+      setShowLocationModal(false);
+      setShowRetailerModal(true);
+    }
   };
 
   const handleSelectRetailer = (r: Retailer) => {
@@ -192,7 +268,7 @@ export const ShopPage: React.FC = () => {
     }
   };
 
-  const handlePaymentSubmit = async () => {
+  const handlePaymentSubmit = async (values: any) => {
     if (!selectedRetailer) return;
     setProcessingPayment(true);
     try {
@@ -203,7 +279,8 @@ export const ShopPage: React.FC = () => {
           quantity: item.quantity,
           price: item.price
         })),
-        paymentMethod: paymentMethod, // 'wallet' or otherwise
+        paymentMethod: paymentMethod, 
+        cardId: values.cardId,
         total: cartTotal
       };
 
@@ -269,7 +346,19 @@ export const ShopPage: React.FC = () => {
         <div className="hero-section">
           <Row justify="space-between" align="middle">
             <Col md={16}>
-              <Text style={{ opacity: 0.8, fontWeight: 700 }}>WELCOME BACK, {user?.name?.toUpperCase() || 'USER'}</Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <Text style={{ opacity: 0.8, fontWeight: 700 }}>WELCOME BACK, {user?.name?.toUpperCase() || 'USER'}</Text>
+                {customerLocation && (
+                  <Button 
+                    size="small" 
+                    icon={<EnvironmentOutlined />} 
+                    onClick={() => setShowLocationModal(true)}
+                    style={{ background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', borderRadius: 8 }}
+                  >
+                    {customerLocation.sector}, {customerLocation.district} (Change)
+                  </Button>
+                )}
+              </div>
               <Title level={1} style={{ color: 'white', margin: '8px 0', fontSize: 42 }}>Freshness at your doorstep.</Title>
               <Input size="large" placeholder="Search products..." prefix={<SearchOutlined style={{ color: '#10b981' }} />} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ height: 56, borderRadius: 16, marginTop: 16 }} />
             </Col>
@@ -359,9 +448,32 @@ export const ShopPage: React.FC = () => {
 
         <Modal open={showCheckoutModal} title="Checkout" onCancel={() => !processingPayment && setShowCheckoutModal(false)} footer={null}>
           {paymentSuccess ? <div style={{ textAlign: 'center', padding: 40 }}><CheckCircleOutlined style={{ fontSize: 64, color: '#10b981' }} /><Title level={3}>Success!</Title></div> : (
-            <Form layout="vertical" onFinish={handlePaymentSubmit}>
+            <Form layout="vertical" onFinish={handlePaymentSubmit} form={checkoutForm}>
               <Card style={{ marginBottom: 24, background: '#f0fdf4', border: 'none' }}><Text type="secondary">Total</Text><Title level={2} style={{ margin: 0, color: '#10b981' }}>{formatPrice(cartTotal)}</Title></Card>
-              <Form.Item label="Payment Method"><Radio.Group value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><Radio value="wallet">BIG Wallet</Radio><Radio value="mobile_money">Mobile Money</Radio></Radio.Group></Form.Item>
+              <Form.Item label="Payment Method" name="paymentMethod_ignore">
+                <Radio.Group value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                  <Radio value="wallet">BIG Wallet</Radio>
+                  <Radio value="nfc_card">NFC Card</Radio>
+                  <Radio value="mobile_money">Mobile Money</Radio>
+                </Radio.Group>
+              </Form.Item>
+              
+              {paymentMethod === 'nfc_card' && (
+                <Form.Item 
+                  name="cardId" 
+                  label="Select Card" 
+                  rules={[{ required: true, message: 'Please select a card' }]}
+                >
+                  <Select placeholder="Choose NFC Card">
+                    {nfcCards.map(c => (
+                      <Option key={c.id} value={c.id}>
+                        {c.nickname || c.card_number} (Bal: {c.balance?.toLocaleString() || 0} RWF)
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )}
+
               <Button type="primary" htmlType="submit" block size="large" loading={processingPayment}>Pay Now</Button>
             </Form>
           )}
@@ -375,8 +487,16 @@ export const ShopPage: React.FC = () => {
                   <Card key={item.id} size="small">
                     <Row align="middle" gutter={12}>
                       <Col span={4}><Avatar src={item.image} shape="square" /></Col>
-                      <Col span={14}><Text strong>{item.name}</Text><div>{formatPrice(item.price)}</div></Col>
-                      <Col span={6} style={{ textAlign: 'right' }}><Text strong>x{item.quantity}</Text></Col>
+                      <Col span={12}><Text strong>{item.name}</Text><div>{formatPrice(item.price)}</div></Col>
+                      <Col span={5} style={{ textAlign: 'right' }}><Text strong>x{item.quantity}</Text></Col>
+                      <Col span={3} style={{ textAlign: 'right' }}>
+                        <Button 
+                          type="text" 
+                          danger 
+                          icon={<DeleteOutlined />} 
+                          onClick={() => removeItem(item.productId)}
+                        />
+                      </Col>
                     </Row>
                   </Card>
                 ))}

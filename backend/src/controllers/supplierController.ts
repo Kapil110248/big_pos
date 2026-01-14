@@ -29,7 +29,11 @@ export const getSuppliers = async (req: AuthRequest, res: Response) => {
 // Create supplier
 export const createSupplier = async (req: AuthRequest, res: Response) => {
     try {
-        const { name, contactPerson, phone, email, address } = req.body;
+        const { name, contactPerson, contact_person, phone, email, address } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Supplier name is required' });
+        }
 
         // Get wholesaler ID from authenticated user
         if (!req.user?.wholesalerProfile?.id) {
@@ -38,12 +42,11 @@ export const createSupplier = async (req: AuthRequest, res: Response) => {
 
         const wholesalerId = req.user.wholesalerProfile.id;
 
-        // Check existing
         const existing = await prisma.supplier.findFirst({
             where: {
                 OR: [
-                    { name },
-                    { email: email || undefined } // Only check email if provided
+                    { name: name as string },
+                    ...(email ? [{ email: email as string }] : [])
                 ]
             }
         });
@@ -54,7 +57,7 @@ export const createSupplier = async (req: AuthRequest, res: Response) => {
 
         const supplierData: Prisma.SupplierUncheckedCreateInput = {
             name,
-            contactPerson,
+            contactPerson: contactPerson || contact_person,
             phone,
             email,
             address,
@@ -77,18 +80,24 @@ export const createSupplier = async (req: AuthRequest, res: Response) => {
 export const updateSupplier = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { name, contactPerson, phone, email, address, status } = req.body;
+        console.log('Update Supplier params:', req.params);
+        console.log('Update Supplier body:', req.body);
+
+        const { name, contactPerson, contact_person, phone, email, address, status } = req.body;
+        
+        const updateData = {
+            name,
+            contactPerson: contactPerson || contact_person,
+            phone,
+            email,
+            address,
+            status
+        };
+        console.log('Prisma Update Data:', updateData);
 
         const supplier = await prisma.supplier.update({
-            where: { id },
-            data: {
-                name,
-                contactPerson,
-                phone,
-                email,
-                address,
-                status
-            }
+            where: { id: Number(id) },
+            data: updateData
         });
 
         res.json({ success: true, message: 'Supplier updated successfully', supplier });
@@ -105,7 +114,7 @@ export const deleteSupplier = async (req: AuthRequest, res: Response) => {
 
         // Check if supplier has products linked
         const supplier = await prisma.supplier.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { _count: { select: { products: true } } }
         });
 
@@ -114,7 +123,7 @@ export const deleteSupplier = async (req: AuthRequest, res: Response) => {
         }
 
         await prisma.supplier.delete({
-            where: { id }
+            where: { id: Number(id) }
         });
 
         res.json({ success: true, message: 'Supplier deleted successfully' });
