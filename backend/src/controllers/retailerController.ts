@@ -956,6 +956,7 @@ export const getWholesalerProducts = async (req: AuthRequest, res: Response) => 
 };
 
 // Create Wholesaler Order
+// ACCOUNT LINKING ENFORCEMENT: Retailer can ONLY order from ONE Wholesaler
 export const createOrder = async (req: AuthRequest, res: Response) => {
   try {
     const retailerProfile = await prisma.retailerProfile.findUnique({
@@ -972,8 +973,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Order must contain items' });
     }
 
-    // Determine wholesaler from the first product (assuming single wholesaler per order for simplicity 
-    // or strictly enforce items from same wholesaler in logic, but here we just take the first one found)
+    // Determine wholesaler from the first product
     const firstProductId = items[0].product_id;
     const firstProduct = await prisma.product.findUnique({ where: { id: firstProductId } });
 
@@ -982,14 +982,51 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
     const wholesalerId = firstProduct.wholesalerId;
 
-    // Transaction: Create Order, Debit Wallet
+    // ==========================================
+    // ACCOUNT LINKING ENFORCEMENT (REQUIREMENT #2)
+    // One Retailer -> One Wholesaler ONLY
+    // ==========================================
+
+    // Check if retailer is already linked to a wholesaler
+    if (retailerProfile.linkedWholesalerId) {
+      // Retailer is already linked - verify they are ordering from the SAME wholesaler
+      if (retailerProfile.linkedWholesalerId !== wholesalerId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You are already linked to a different wholesaler. Retailers can only order from ONE wholesaler.',
+          linkedWholesalerId: retailerProfile.linkedWholesalerId,
+          attemptedWholesalerId: wholesalerId
+        });
+      }
+    }
+
+    // Verify ALL items belong to the SAME wholesaler
+    for (const item of items) {
+      const product = await prisma.product.findUnique({ where: { id: item.product_id } });
+      if (!product || product.wholesalerId !== wholesalerId) {
+        return res.status(400).json({
+          success: false,
+          error: 'All items must belong to the same wholesaler. Mixed wholesaler orders are not allowed.'
+        });
+      }
+    }
+
+    // Transaction: Create Order, Debit Wallet, Link Retailer to Wholesaler (if first order)
     const result = await prisma.$transaction(async (prisma) => {
       // 1. Check Wallet
       if (retailerProfile.walletBalance < totalAmount) {
         throw new Error('Insufficient wallet balance');
       }
 
-      // 2. Create Order
+      // 2. Auto-link retailer to wholesaler on FIRST order (if not already linked)
+      if (!retailerProfile.linkedWholesalerId) {
+        await prisma.retailerProfile.update({
+          where: { id: retailerProfile.id },
+          data: { linkedWholesalerId: wholesalerId }
+        });
+      }
+
+      // 3. Create Order
       const order = await prisma.order.create({
         data: {
           retailerId: retailerProfile.id,
@@ -1006,7 +1043,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         }
       });
 
-      // 3. Debit Wallet
+      // 4. Debit Wallet
       await prisma.retailerProfile.update({
         where: { id: retailerProfile.id },
         data: { walletBalance: { decrement: totalAmount } }

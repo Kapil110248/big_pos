@@ -3,10 +3,31 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
 
 // Create a new retail order
+// REQUIREMENT #4: Reward Gas COMPLETELY REMOVED from order payment process
 export const createOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { retailerId, items, paymentMethod, total } = req.body;
     const userId = req.user!.id;
+
+    // ==========================================
+    // REWARD GAS PAYMENT REJECTION (REQUIREMENT #4)
+    // Reward gas MUST NOT be available during order payment
+    // ==========================================
+    const FORBIDDEN_PAYMENT_METHODS = [
+      'reward_gas',
+      'gas_rewards',
+      'rewards_wallet',
+      'gas_rewards_wallet',
+      'rewards',
+      'gas_reward'
+    ];
+
+    if (FORBIDDEN_PAYMENT_METHODS.includes(paymentMethod?.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reward gas cannot be used for order payments. Please use wallet, NFC card, or mobile money.'
+      });
+    }
 
     const consumerProfile = await prisma.consumerProfile.findUnique({
       where: { userId }
@@ -21,7 +42,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (prisma) => {
-      // 1. Process Payment
+      // 1. Process Payment (Reward gas is NEVER processed - rejected above)
       if (paymentMethod === 'wallet') {
         const wallet = await prisma.wallet.findFirst({
           where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }

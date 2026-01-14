@@ -64,6 +64,10 @@ import RecruitmentPage from './pages/admin/RecruitmentPage';
 import VendorManagementPage from './pages/admin/VendorManagementPage';
 import DealsPage from './pages/admin/DealsPage';
 import PricingConfigPage from './pages/admin/PricingConfigPage';
+// New Admin Pages for Client Requirements
+import SettlementInvoicesPage from './pages/admin/SettlementInvoicesPage';
+import AccountDetailsPage from './pages/admin/AccountDetailsPage';
+import LinkageManagementPage from './pages/admin/LinkageManagementPage';
 
 // Placeholder for pages not yet implemented
 const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
@@ -186,6 +190,17 @@ function App() {
               <Route path="pricing-config" element={<PricingConfigPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="profile" element={<ProfileSettingsPage />} />
+              {/* New routes for client requirements */}
+              <Route path="settlement-invoices" element={<SettlementInvoicesPage />} />
+              <Route path="account-details/:id" element={<AccountDetailsPage />} />
+              <Route path="linkage" element={<LinkageManagementPage />} />
+              {/* HR Routes */}
+              <Route path="employees" element={<EmployeeManagementPage />} />
+              <Route path="employees/:id" element={<EmployeeDetailsPage />} />
+              <Route path="payroll" element={<PayrollProcessingPage />} />
+              <Route path="recruitment" element={<RecruitmentPage />} />
+              <Route path="vendors" element={<VendorManagementPage />} />
+              <Route path="deals" element={<DealsPage />} />
             </Route>
 
             {/* Catch all - redirect to home */}

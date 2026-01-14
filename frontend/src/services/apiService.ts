@@ -598,6 +598,46 @@ export const adminApi = {
 
   // Reports
   getReports: (params?: any) => api.get("/admin/reports", { params }),
+
+  // ==========================================
+  // REAL-TIME READ-ONLY ACCOUNT ACCESS (Admin views)
+  // ==========================================
+  getCustomerAccountDetails: (id: string) => api.get(`/admin/customers/${id}/account-details`),
+  getRetailerAccountDetails: (id: string) => api.get(`/admin/retailers/${id}/account-details`),
+  getWorkerAccountDetails: (id: string) => api.get(`/admin/employees/${id}/account-details`),
+  getWholesalerAccountDetails: (id: string) => api.get(`/admin/wholesalers/${id}/account-details`),
+
+  // ==========================================
+  // WHOLESALER-RETAILER LINKAGE
+  // ==========================================
+  getRetailerWholesalerLinkage: () => api.get('/admin/linkage'),
+  linkRetailerToWholesaler: (retailerId: number, wholesalerId: number) =>
+    api.post('/admin/linkage/link', { retailerId, wholesalerId }),
+  unlinkRetailerFromWholesaler: (retailerId: number) =>
+    api.post('/admin/linkage/unlink', { retailerId }),
+
+  // ==========================================
+  // SETTLEMENT INVOICE MANAGEMENT
+  // ==========================================
+  getSettlementInvoices: (params?: { month?: string; partyType?: string; partyId?: number }) =>
+    api.get('/admin/settlement-invoices', { params }),
+  createSettlementInvoice: (data: {
+    partyType: 'retailer' | 'wholesaler';
+    partyId: number;
+    settlementMonth: string;
+    totalAmount: number;
+    invoiceFileUrl?: string;
+    notes?: string;
+  }) => api.post('/admin/settlement-invoices', data),
+  getSettlementInvoice: (id: string) => api.get(`/admin/settlement-invoices/${id}`),
+  updateSettlementInvoice: (id: string, data: { totalAmount?: number; invoiceFileUrl?: string; notes?: string }) =>
+    api.put(`/admin/settlement-invoices/${id}`, data),
+  deleteSettlementInvoice: (id: string) => api.delete(`/admin/settlement-invoices/${id}`),
+
+  // ==========================================
+  // EMPLOYEES (for Workers)
+  // ==========================================
+  getEmployees: (params?: any) => api.get('/admin/employees', { params }),
 };
 
 // General Auth APIs (Protected)
