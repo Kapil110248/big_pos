@@ -136,38 +136,101 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 // Get retailers with location filtering
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
-    const { district, sector, cell } = req.query;
-    const where: any = {};
+    const { district, sector, cell, search } = req.query;
+    const where: any = {
+      isVerified: true, // Only show verified retailers to customers
+    };
 
+    // Location-based filtering
     if (district || sector || cell) {
         const conditions = [];
-        if (district) conditions.push({ address: { contains: district as string } });
-        // Note: For partial matches on unstructured addresses, simple contains is best effort
-        if (sector) conditions.push({ address: { contains: sector as string } });
-        if (cell) conditions.push({ address: { contains: cell as string } });
-        
+        if (district) conditions.push({ address: { contains: district as string, mode: 'insensitive' } });
+        if (sector) conditions.push({ address: { contains: sector as string, mode: 'insensitive' } });
+        if (cell) conditions.push({ address: { contains: cell as string, mode: 'insensitive' } });
+
         if (conditions.length > 0) {
             where.AND = conditions;
         }
     }
 
+    // Search by shop name
+    if (search) {
+      where.shopName = { contains: search as string, mode: 'insensitive' };
+    }
+
     let retailers = await prisma.retailerProfile.findMany({
       where,
-      include: { user: true }
+      include: {
+        user: {
+          select: {
+            phone: true,
+            email: true,
+            isActive: true,
+          }
+        },
+        // Get product count for each retailer
+        inventory: {
+          where: { quantity: { gt: 0 } },
+          select: { id: true }
+        },
+        // Get linked wholesaler info
+        linkedWholesaler: {
+          select: {
+            companyName: true,
+          }
+        }
+      }
     });
 
-    // Fallback: If strict location filtering returns no results, return all retailers
-    // This allows users to "just enter any location" and still see stores to proceed.
+    // Filter only active retailers
+    retailers = retailers.filter(r => r.user?.isActive);
+
+    // Fallback: If strict location filtering returns no results, return all verified retailers
     if (retailers.length === 0 && (district || sector || cell)) {
         retailers = await prisma.retailerProfile.findMany({
-            include: { user: true },
-            take: 10 // Limit fallback results
+            where: { isVerified: true },
+            include: {
+              user: {
+                select: {
+                  phone: true,
+                  email: true,
+                  isActive: true,
+                }
+              },
+              inventory: {
+                where: { quantity: { gt: 0 } },
+                select: { id: true }
+              },
+              linkedWholesaler: {
+                select: {
+                  companyName: true,
+                }
+              }
+            },
+            take: 20
         });
+        retailers = retailers.filter(r => r.user?.isActive);
     }
-    
-    res.json({ retailers });
+
+    // Format response with useful info for customers
+    const formattedRetailers = retailers.map(r => ({
+      id: r.id,
+      shopName: r.shopName,
+      address: r.address,
+      phone: r.user?.phone,
+      email: r.user?.email,
+      isVerified: r.isVerified,
+      productCount: r.inventory?.length || 0,
+      wholesaler: r.linkedWholesaler?.companyName || null,
+    }));
+
+    res.json({
+      success: true,
+      retailers: formattedRetailers,
+      total: formattedRetailers.length
+    });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
