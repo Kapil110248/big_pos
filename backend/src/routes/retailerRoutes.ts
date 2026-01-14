@@ -25,7 +25,12 @@ import {
   getProfile,
   updateProfile,
   topUpWallet,
-  getAnalytics
+  getAnalytics,
+  // Wholesaler Discovery & Link Request APIs
+  getAvailableWholesalers,
+  sendLinkRequest,
+  getMyLinkRequests,
+  cancelLinkRequest
 } from '../controllers/retailerController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -69,5 +74,11 @@ router.get('/pos/daily-sales', getDailySales);
 
 // Wholesaler Products (for Add Stock)
 router.get('/wholesaler/products', getWholesalerProducts);
+
+// Wholesaler Discovery & Link Request Routes
+router.get('/wholesalers/available', getAvailableWholesalers);
+router.post('/wholesalers/link-request', sendLinkRequest);
+router.get('/wholesalers/link-requests', getMyLinkRequests);
+router.delete('/wholesalers/link-request/:requestId', cancelLinkRequest);
 
 export default router;

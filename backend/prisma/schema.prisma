@@ -674,6 +674,28 @@ model RetailerProfile {
 
   @@index([linkedWholesalerId], map: "RetailerProfile_linkedWholesalerId_fkey")
   @@map("retailerprofile")
+
+  linkRequests        LinkRequest[]        @relation("RetailerLinkRequests")
+}
+
+// Link Request - Retailer requests to be linked with a Wholesaler
+model LinkRequest {
+  id              Int               @id @default(autoincrement())
+  retailerId      Int
+  wholesalerId    Int
+  status          String            @default("pending") // pending, approved, rejected
+  message         String?           // Optional message from retailer
+  rejectionReason String?           // Reason if rejected
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  respondedAt     DateTime?         // When wholesaler responded
+
+  retailer        RetailerProfile   @relation("RetailerLinkRequests", fields: [retailerId], references: [id], onDelete: Cascade)
+  wholesaler      WholesalerProfile @relation("WholesalerLinkRequests", fields: [wholesalerId], references: [id], onDelete: Cascade)
+
+  @@unique([retailerId, wholesalerId]) // One request per retailer-wholesaler pair
+  @@index([wholesalerId])
+  @@map("linkrequest")
 }
 
 model SaleItem {
@@ -759,6 +781,7 @@ model WholesalerProfile {
   wholesalerSettings  WholesalerSettings?
   linkedRetailers     RetailerProfile[]    @relation("WholesalerRetailers")
   settlementInvoices  SettlementInvoice[]  @relation("WholesalerInvoices")
+  linkRequests        LinkRequest[]        @relation("WholesalerLinkRequests")
 
   @@map("wholesalerprofile")
 }

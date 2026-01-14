@@ -817,3 +817,275 @@ export const rejectCreditRequest = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// ==========================================
+// LINK REQUEST MANAGEMENT (Retailer-Wholesaler Linking)
+// ==========================================
+
+// Get all link requests for this wholesaler
+export const getLinkRequests = async (req: AuthRequest, res: Response) => {
+  try {
+    const { status } = req.query;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const where: any = { wholesalerId: wholesalerProfile.id };
+    if (status) {
+      where.status = status as string;
+    }
+
+    const requests = await prisma.linkRequest.findMany({
+      where,
+      include: {
+        retailer: {
+          include: {
+            user: {
+              select: { phone: true, email: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const formattedRequests = requests.map(r => ({
+      id: r.id,
+      retailerId: r.retailerId,
+      retailerName: r.retailer.shopName,
+      retailerPhone: r.retailer.user?.phone,
+      retailerEmail: r.retailer.user?.email,
+      retailerAddress: r.retailer.address,
+      isVerified: r.retailer.isVerified,
+      status: r.status,
+      message: r.message,
+      rejectionReason: r.rejectionReason,
+      createdAt: r.createdAt,
+      respondedAt: r.respondedAt
+    }));
+
+    // Get counts by status
+    const pendingCount = requests.filter(r => r.status === 'pending').length;
+    const approvedCount = requests.filter(r => r.status === 'approved').length;
+    const rejectedCount = requests.filter(r => r.status === 'rejected').length;
+
+    res.json({
+      success: true,
+      requests: formattedRequests,
+      stats: {
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+        total: requests.length
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching link requests:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Approve a link request
+export const approveLinkRequest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { requestId } = req.params;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const request = await prisma.linkRequest.findFirst({
+      where: {
+        id: parseInt(requestId),
+        wholesalerId: wholesalerProfile.id
+      },
+      include: { retailer: true }
+    });
+
+    if (!request) {
+      return res.status(404).json({ success: false, error: 'Link request not found' });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        error: `Request already ${request.status}`
+      });
+    }
+
+    // Check if retailer is already linked to another wholesaler
+    if (request.retailer.linkedWholesalerId && request.retailer.linkedWholesalerId !== wholesalerProfile.id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Retailer is already linked to another wholesaler'
+      });
+    }
+
+    // Transaction: Approve request and link retailer
+    await prisma.$transaction(async (prisma) => {
+      // 1. Update request status
+      await prisma.linkRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'approved',
+          respondedAt: new Date()
+        }
+      });
+
+      // 2. Link retailer to this wholesaler
+      await prisma.retailerProfile.update({
+        where: { id: request.retailerId },
+        data: { linkedWholesalerId: wholesalerProfile.id }
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Link request approved. ${request.retailer.shopName} is now linked to you.`
+    });
+  } catch (error: any) {
+    console.error('Error approving link request:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Reject a link request
+export const rejectLinkRequest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { requestId } = req.params;
+    const { reason } = req.body;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const request = await prisma.linkRequest.findFirst({
+      where: {
+        id: parseInt(requestId),
+        wholesalerId: wholesalerProfile.id,
+        status: 'pending'
+      }
+    });
+
+    if (!request) {
+      return res.status(404).json({ success: false, error: 'Pending link request not found' });
+    }
+
+    await prisma.linkRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'rejected',
+        rejectionReason: reason || null,
+        respondedAt: new Date()
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Link request rejected'
+    });
+  } catch (error: any) {
+    console.error('Error rejecting link request:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get linked retailers for this wholesaler
+export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
+  try {
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const retailers = await prisma.retailerProfile.findMany({
+      where: { linkedWholesalerId: wholesalerProfile.id },
+      include: {
+        user: {
+          select: { phone: true, email: true }
+        },
+        orders: {
+          where: { wholesalerId: wholesalerProfile.id },
+          select: { id: true, totalAmount: true }
+        }
+      }
+    });
+
+    const formattedRetailers = retailers.map(r => ({
+      id: r.id,
+      shopName: r.shopName,
+      address: r.address,
+      phone: r.user?.phone,
+      email: r.user?.email,
+      isVerified: r.isVerified,
+      linkedAt: r.updatedAt,
+      orderCount: r.orders.length,
+      totalPurchased: r.orders.reduce((sum, o) => sum + o.totalAmount, 0)
+    }));
+
+    res.json({
+      success: true,
+      retailers: formattedRetailers,
+      total: formattedRetailers.length
+    });
+  } catch (error: any) {
+    console.error('Error fetching linked retailers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Unlink a retailer
+export const unlinkRetailer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { retailerId } = req.params;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const retailer = await prisma.retailerProfile.findFirst({
+      where: {
+        id: parseInt(retailerId),
+        linkedWholesalerId: wholesalerProfile.id
+      }
+    });
+
+    if (!retailer) {
+      return res.status(404).json({ success: false, error: 'Retailer not found or not linked to you' });
+    }
+
+    // Unlink
+    await prisma.retailerProfile.update({
+      where: { id: retailer.id },
+      data: { linkedWholesalerId: null }
+    });
+
+    res.json({
+      success: true,
+      message: `${retailer.shopName} has been unlinked`
+    });
+  } catch (error: any) {
+    console.error('Error unlinking retailer:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

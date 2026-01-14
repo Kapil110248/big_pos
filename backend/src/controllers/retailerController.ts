@@ -1679,3 +1679,268 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// ==========================================
+// WHOLESALER DISCOVERY & LINK REQUEST APIs
+// ==========================================
+
+// Get available wholesalers for retailer to discover
+export const getAvailableWholesalers = async (req: AuthRequest, res: Response) => {
+  try {
+    const { search } = req.query;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+    }
+
+    // Get all verified wholesalers
+    const where: any = { isVerified: true };
+    if (search) {
+      where.companyName = { contains: search as string };
+    }
+
+    const wholesalers = await prisma.wholesalerProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            phone: true,
+            email: true,
+            isActive: true,
+          }
+        },
+        linkedRetailers: {
+          select: { id: true }
+        },
+        inventory: {
+          where: { stock: { gt: 0 } },
+          select: { id: true }
+        }
+      }
+    });
+
+    // Get existing link requests from this retailer
+    const existingRequests = await prisma.linkRequest.findMany({
+      where: { retailerId: retailerProfile.id },
+      select: { wholesalerId: true, status: true }
+    });
+
+    const requestMap = new Map(existingRequests.map(r => [r.wholesalerId, r.status]));
+
+    // Format response
+    const formattedWholesalers = wholesalers
+      .filter(w => w.user?.isActive)
+      .map(w => ({
+        id: w.id,
+        companyName: w.companyName,
+        contactPerson: w.contactPerson,
+        address: w.address,
+        phone: w.user?.phone,
+        email: w.user?.email,
+        isVerified: w.isVerified,
+        retailerCount: w.linkedRetailers?.length || 0,
+        productCount: w.inventory?.length || 0,
+        // Link status for this retailer
+        isLinked: retailerProfile.linkedWholesalerId === w.id,
+        requestStatus: requestMap.get(w.id) || null, // pending, approved, rejected, or null
+      }));
+
+    res.json({
+      success: true,
+      wholesalers: formattedWholesalers,
+      total: formattedWholesalers.length,
+      currentLinkedWholesalerId: retailerProfile.linkedWholesalerId
+    });
+  } catch (error: any) {
+    console.error('Error fetching wholesalers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Send link request to wholesaler
+export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { wholesalerId, message } = req.body;
+
+    if (!wholesalerId) {
+      return res.status(400).json({ success: false, error: 'Wholesaler ID is required' });
+    }
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+    }
+
+    // Check if already linked to a wholesaler
+    if (retailerProfile.linkedWholesalerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'You are already linked to a wholesaler. Unlink first to request a new one.'
+      });
+    }
+
+    // Check if wholesaler exists
+    const wholesaler = await prisma.wholesalerProfile.findUnique({
+      where: { id: wholesalerId }
+    });
+
+    if (!wholesaler) {
+      return res.status(404).json({ success: false, error: 'Wholesaler not found' });
+    }
+
+    // Check for existing request
+    const existingRequest = await prisma.linkRequest.findUnique({
+      where: {
+        retailerId_wholesalerId: {
+          retailerId: retailerProfile.id,
+          wholesalerId: wholesalerId
+        }
+      }
+    });
+
+    if (existingRequest) {
+      if (existingRequest.status === 'pending') {
+        return res.status(400).json({
+          success: false,
+          error: 'You already have a pending request to this wholesaler'
+        });
+      }
+      if (existingRequest.status === 'approved') {
+        return res.status(400).json({
+          success: false,
+          error: 'Your request was already approved. Contact admin if not linked.'
+        });
+      }
+      // If rejected, allow to send again - update the existing request
+      const updatedRequest = await prisma.linkRequest.update({
+        where: { id: existingRequest.id },
+        data: {
+          status: 'pending',
+          message: message || null,
+          rejectionReason: null,
+          respondedAt: null,
+          updatedAt: new Date()
+        }
+      });
+
+      return res.json({
+        success: true,
+        message: 'Link request re-sent successfully',
+        request: updatedRequest
+      });
+    }
+
+    // Create new link request
+    const linkRequest = await prisma.linkRequest.create({
+      data: {
+        retailerId: retailerProfile.id,
+        wholesalerId: wholesalerId,
+        message: message || null,
+        status: 'pending'
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Link request sent successfully',
+      request: linkRequest
+    });
+  } catch (error: any) {
+    console.error('Error sending link request:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get my link requests (for retailer)
+export const getMyLinkRequests = async (req: AuthRequest, res: Response) => {
+  try {
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+    }
+
+    const requests = await prisma.linkRequest.findMany({
+      where: { retailerId: retailerProfile.id },
+      include: {
+        wholesaler: {
+          include: {
+            user: {
+              select: { phone: true, email: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const formattedRequests = requests.map(r => ({
+      id: r.id,
+      wholesalerId: r.wholesalerId,
+      wholesalerName: r.wholesaler.companyName,
+      wholesalerPhone: r.wholesaler.user?.phone,
+      wholesalerAddress: r.wholesaler.address,
+      status: r.status,
+      message: r.message,
+      rejectionReason: r.rejectionReason,
+      createdAt: r.createdAt,
+      respondedAt: r.respondedAt
+    }));
+
+    res.json({
+      success: true,
+      requests: formattedRequests
+    });
+  } catch (error: any) {
+    console.error('Error fetching link requests:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Cancel link request (for retailer)
+export const cancelLinkRequest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { requestId } = req.params;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+    }
+
+    const request = await prisma.linkRequest.findFirst({
+      where: {
+        id: parseInt(requestId),
+        retailerId: retailerProfile.id,
+        status: 'pending'
+      }
+    });
+
+    if (!request) {
+      return res.status(404).json({ success: false, error: 'Pending request not found' });
+    }
+
+    await prisma.linkRequest.delete({
+      where: { id: request.id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Link request cancelled successfully'
+    });
+  } catch (error: any) {
+    console.error('Error cancelling link request:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
