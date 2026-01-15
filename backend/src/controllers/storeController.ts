@@ -40,23 +40,32 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     // ==========================================
     // ACCOUNT LINKING ENFORCEMENT (REQUIREMENT #3)
-    // Customer MUST be linked to a retailer before placing orders
+    // Customer MUST be approved by the retailer before placing orders
+    // NEW LOGIC: Customer can be linked to MULTIPLE retailers
     // ==========================================
-    if (!consumerProfile.linkedRetailerId) {
-      return res.status(403).json({
+    if (!retailerId) {
+      return res.status(400).json({
         success: false,
-        error: 'You must be linked to a retailer before placing orders. Please send a link request and wait for approval.',
-        requiresLinking: true
+        error: 'Retailer ID is required to place an order.'
       });
     }
 
-    // Verify customer is ordering from their linked retailer ONLY
-    if (retailerId && consumerProfile.linkedRetailerId !== parseInt(retailerId)) {
+    // Check if customer is APPROVED by this specific retailer
+    const approvalStatus = await prisma.customerLinkRequest.findUnique({
+      where: {
+        customerId_retailerId: {
+          customerId: consumerProfile.id,
+          retailerId: parseInt(retailerId)
+        }
+      }
+    });
+
+    if (!approvalStatus || approvalStatus.status !== 'approved') {
       return res.status(403).json({
         success: false,
-        error: 'You can only order from your linked retailer.',
-        linkedRetailerId: consumerProfile.linkedRetailerId,
-        attemptedRetailerId: retailerId
+        error: 'You must be approved by this retailer before placing orders. Please send a link request and wait for approval.',
+        requiresLinking: true,
+        requestStatus: approvalStatus?.status || null
       });
     }
 
@@ -300,26 +309,32 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const isLinked = !!consumerProfile.linkedRetailerId;
+    // NEW LOGIC: Customer can be linked to MULTIPLE retailers
+    // canBuy is determined per-retailer based on CustomerLinkRequest approval status
     let canBuy = false;
     let viewingRetailerId: number | null = null;
+    let isApprovedForThisRetailer = false;
 
     // Case 1: Viewing specific retailer's products (for discovery)
     if (retailerId) {
       viewingRetailerId = parseInt(retailerId as string);
       where.retailerId = viewingRetailerId;
 
-      // Can only buy if this is the linked retailer
-      canBuy = isLinked && consumerProfile.linkedRetailerId === viewingRetailerId;
+      // Check if customer is APPROVED by this specific retailer
+      const approvalStatus = await prisma.customerLinkRequest.findUnique({
+        where: {
+          customerId_retailerId: {
+            customerId: consumerProfile.id,
+            retailerId: viewingRetailerId
+          }
+        }
+      });
+      isApprovedForThisRetailer = approvalStatus?.status === 'approved';
+      canBuy = isApprovedForThisRetailer;
     }
-    // Case 2: No retailerId specified
-    else if (isLinked) {
-      // Show linked retailer's products
-      viewingRetailerId = consumerProfile.linkedRetailerId;
-      where.retailerId = consumerProfile.linkedRetailerId;
-      canBuy = true;
-    } else {
-      // Not linked and no retailerId specified - return empty with guidance
+    // Case 2: No retailerId specified - show guidance
+    else {
+      // Not viewing a specific retailer - return empty with guidance
       return res.json({
         success: true,
         products: [],
@@ -355,9 +370,9 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
     res.json({
       success: true,
       products,
-      isLinked,
+      isLinked: isApprovedForThisRetailer,
       canBuy,
-      linkedRetailerId: consumerProfile.linkedRetailerId,
+      linkedRetailerId: viewingRetailerId, // For compatibility - shows retailer being viewed
       viewingRetailerId,
       retailerInfo
     });

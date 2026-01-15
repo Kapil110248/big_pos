@@ -22,6 +22,7 @@ import {
   Radio,
   Avatar,
   ConfigProvider,
+  Tooltip,
 } from 'antd';
 import {
   ShoppingCartOutlined,

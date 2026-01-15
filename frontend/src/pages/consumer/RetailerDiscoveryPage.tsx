@@ -74,8 +74,9 @@ const RetailerDiscoveryPage: React.FC = () => {
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(false);
 
-  // Check if customer already has a pending request
-  const hasPendingRequest = myRequests.some(r => r.status === 'pending');
+  // NEW: Customer can link to MULTIPLE retailers
+  // Get count of approved retailers
+  const approvedRetailersCount = myRequests.filter(r => r.status === 'approved').length;
 
   useEffect(() => {
     fetchRetailers();
@@ -206,33 +207,34 @@ const RetailerDiscoveryPage: React.FC = () => {
       key: 'actions',
       width: 320,
       render: (_: any, record: Retailer) => {
-        // Determine what button to show
-        const isThisRetailerLinked = record.isLinked;
-        const hasRequestToThisRetailer = record.requestStatus === 'pending';
-        const isAlreadyLinkedToAnother = currentLinkedId && !isThisRetailerLinked;
-        const hasPendingToAnother = hasPendingRequest && !hasRequestToThisRetailer;
+        // NEW: Customer can link to MULTIPLE retailers
+        // Determine status for THIS retailer only
+        const isApprovedByThisRetailer = record.requestStatus === 'approved' || record.isLinked;
+        const hasPendingToThisRetailer = record.requestStatus === 'pending';
+        const wasRejectedByThisRetailer = record.requestStatus === 'rejected';
+        const hasNoRequestToThisRetailer = !record.requestStatus;
 
         return (
           <Space wrap>
-            {/* View Products Button */}
+            {/* View Products Button - Always show, highlight if approved */}
             <Button
               icon={<ShoppingCartOutlined />}
               size="small"
-              type={isThisRetailerLinked ? "primary" : "default"}
+              type={isApprovedByThisRetailer ? "primary" : "default"}
               onClick={() => navigate(`/consumer/shop?retailerId=${record.id}`)}
             >
-              {isThisRetailerLinked ? 'Shop Now' : 'View Products'}
+              {isApprovedByThisRetailer ? 'Shop Now' : 'View Products'}
             </Button>
 
-            {/* CASE 1: Customer is LINKED to this retailer */}
-            {isThisRetailerLinked && (
+            {/* CASE 1: Customer is APPROVED by this retailer - can buy */}
+            {isApprovedByThisRetailer && (
               <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
-                Your Retailer
+                Approved - Can Buy
               </Tag>
             )}
 
             {/* CASE 2: Customer has PENDING request to this retailer */}
-            {hasRequestToThisRetailer && (
+            {hasPendingToThisRetailer && (
               <>
                 <Tag color="orange" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>
                   Waiting for Approval
@@ -245,27 +247,34 @@ const RetailerDiscoveryPage: React.FC = () => {
                     if (req) handleCancelRequest(req.id);
                   }}
                 >
-                  Cancel Request
+                  Cancel
                 </Button>
               </>
             )}
 
-            {/* CASE 3: Customer is linked to ANOTHER retailer */}
-            {isAlreadyLinkedToAnother && (
-              <Tag color="default" style={{ margin: 0 }}>
-                Already Linked Elsewhere
-              </Tag>
+            {/* CASE 3: Request was REJECTED - can resend */}
+            {wasRejectedByThisRetailer && (
+              <>
+                <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>
+                  Rejected
+                </Tag>
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  size="small"
+                  style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                  onClick={() => {
+                    setSelectedRetailer(record);
+                    setRequestModalVisible(true);
+                  }}
+                >
+                  Resend Request
+                </Button>
+              </>
             )}
 
-            {/* CASE 4: Customer has pending request to ANOTHER retailer */}
-            {!isThisRetailerLinked && !hasRequestToThisRetailer && hasPendingToAnother && (
-              <Tag color="orange" style={{ margin: 0 }}>
-                Pending Request Elsewhere
-              </Tag>
-            )}
-
-            {/* CASE 5: Customer can send link request (NOT linked, NO pending requests anywhere) */}
-            {!isThisRetailerLinked && !currentLinkedId && !hasPendingRequest && record.requestStatus !== 'pending' && (
+            {/* CASE 4: No request yet - can send link request */}
+            {hasNoRequestToThisRetailer && (
               <Button
                 type="primary"
                 icon={<SendOutlined />}
@@ -276,15 +285,8 @@ const RetailerDiscoveryPage: React.FC = () => {
                   setRequestModalVisible(true);
                 }}
               >
-                {record.requestStatus === 'rejected' ? 'Resend Link Request' : 'Send Link Request'}
+                Send Link Request
               </Button>
-            )}
-
-            {/* CASE 6: Request was REJECTED - can resend */}
-            {!isThisRetailerLinked && !currentLinkedId && !hasPendingRequest && record.requestStatus === 'rejected' && (
-              <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>
-                Previously Rejected
-              </Tag>
             )}
           </Space>
         );
@@ -298,20 +300,22 @@ const RetailerDiscoveryPage: React.FC = () => {
         <LinkOutlined /> Discover Retailers
       </Title>
 
-      {currentLinkedId && (
+      {/* Show info about approved retailers */}
+      {approvedRetailersCount > 0 && (
         <Alert
-          message="You are already linked to a retailer"
-          description="You can only be linked to one retailer at a time. To change your retailer, please contact support."
-          type="info"
+          message={`You are approved by ${approvedRetailersCount} retailer${approvedRetailersCount > 1 ? 's' : ''}`}
+          description="You can place orders from any retailer that has approved your link request. You can also send requests to other retailers."
+          type="success"
           showIcon
           style={{ marginBottom: 16 }}
         />
       )}
 
-      {!currentLinkedId && myRequests.filter(r => r.status === 'pending').length === 0 && (
+      {/* Show guidance if no approvals yet */}
+      {approvedRetailersCount === 0 && myRequests.filter(r => r.status === 'pending').length === 0 && (
         <Alert
-          message="Link to a Retailer"
-          description="You need to send a link request to a retailer and wait for approval before you can view products and place orders."
+          message="Link to Retailers"
+          description="Send link requests to retailers you want to buy from. Once approved, you can place orders. You can link to multiple retailers!"
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
@@ -386,15 +390,16 @@ const RetailerDiscoveryPage: React.FC = () => {
           <Button
             key="products"
             icon={<ShoppingCartOutlined />}
+            type={selectedRetailer?.requestStatus === 'approved' || selectedRetailer?.isLinked ? "primary" : "default"}
             onClick={() => {
               setViewModalVisible(false);
               navigate(`/consumer/shop?retailerId=${selectedRetailer?.id}`);
             }}
           >
-            View Products
+            {selectedRetailer?.requestStatus === 'approved' || selectedRetailer?.isLinked ? 'Shop Now' : 'View Products'}
           </Button>,
-          // Show Send Link Request button if customer is not linked and no pending request
-          !selectedRetailer?.isLinked && !currentLinkedId && !hasPendingRequest && selectedRetailer?.requestStatus !== 'pending' && (
+          // Show Send Link Request button if no pending/approved request to this retailer
+          !selectedRetailer?.isLinked && selectedRetailer?.requestStatus !== 'pending' && selectedRetailer?.requestStatus !== 'approved' && (
             <Button
               key="request"
               type="primary"
@@ -405,7 +410,7 @@ const RetailerDiscoveryPage: React.FC = () => {
                 setRequestModalVisible(true);
               }}
             >
-              Send Link Request
+              {selectedRetailer?.requestStatus === 'rejected' ? 'Resend Link Request' : 'Send Link Request'}
             </Button>
           ),
         ]}
@@ -438,9 +443,9 @@ const RetailerDiscoveryPage: React.FC = () => {
             </Descriptions>
 
             {/* Show appropriate message based on status */}
-            {selectedRetailer.isLinked && (
+            {(selectedRetailer.isLinked || selectedRetailer.requestStatus === 'approved') && (
               <Alert
-                message="You are linked to this retailer"
+                message="You are approved by this retailer"
                 description="You can browse products and place orders from this retailer."
                 type="success"
                 showIcon
@@ -458,21 +463,21 @@ const RetailerDiscoveryPage: React.FC = () => {
               />
             )}
 
-            {!selectedRetailer.isLinked && !currentLinkedId && !hasPendingRequest && selectedRetailer.requestStatus !== 'pending' && (
+            {selectedRetailer.requestStatus === 'rejected' && (
               <Alert
-                message="Send a Link Request"
-                description="Click 'Send Link Request' button below to request linking with this retailer. Once approved, you can place orders."
-                type="info"
+                message="Request Previously Rejected"
+                description="Your previous request was rejected. You can resend a link request if you want."
+                type="error"
                 showIcon
                 style={{ marginTop: 16 }}
               />
             )}
 
-            {currentLinkedId && !selectedRetailer.isLinked && (
+            {!selectedRetailer.isLinked && !selectedRetailer.requestStatus && (
               <Alert
-                message="Already Linked to Another Retailer"
-                description="You are already linked to a different retailer. Customers can only be linked to one retailer at a time."
-                type="warning"
+                message="Send a Link Request"
+                description="Click 'Send Link Request' button below to request linking with this retailer. Once approved, you can place orders."
+                type="info"
                 showIcon
                 style={{ marginTop: 16 }}
               />
