@@ -38,7 +38,10 @@ import {
   approveCustomerLinkRequest,
   rejectCustomerLinkRequest,
   getLinkedCustomers,
-  unlinkCustomer
+  unlinkCustomer,
+  // Settlement Invoices (Read-only)
+  getSettlementInvoices,
+  getSettlementInvoice
 } from '../controllers/retailerController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -97,5 +100,9 @@ router.post('/customer-link-requests/:requestId/approve', approveCustomerLinkReq
 router.post('/customer-link-requests/:requestId/reject', rejectCustomerLinkRequest);
 router.get('/linked-customers', getLinkedCustomers);
 router.delete('/linked-customers/:customerId', unlinkCustomer);
+
+// Settlement Invoices (Read-only - Admin assigns these)
+router.get('/settlement-invoices', getSettlementInvoices);
+router.get('/settlement-invoices/:id', getSettlementInvoice);
 
 export default router;
