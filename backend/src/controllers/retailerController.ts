@@ -909,14 +909,15 @@ export const getDailySales = async (req: AuthRequest, res: Response) => {
 // ==========================================
 
 // Get Wholesaler Products
+// NEW LOGIC:
+// - Retailer can view products of ANY wholesaler (READ-ONLY for discovery)
+// - Retailer can ONLY BUY from linked wholesaler
+// - If wholesalerId param provided, show that wholesaler's products
+// - If no wholesalerId, show linked wholesaler's products (if linked)
 export const getWholesalerProducts = async (req: AuthRequest, res: Response) => {
   try {
-    const { search, category, limit = '50', offset = '0' } = req.query;
+    const { search, category, limit = '50', offset = '0', wholesalerId } = req.query;
 
-    // ==========================================
-    // ACCOUNT LINKING ENFORCEMENT
-    // Retailer can ONLY view products from their linked wholesaler
-    // ==========================================
     const retailerProfile = await prisma.retailerProfile.findUnique({
       where: { userId: req.user!.id }
     });
@@ -925,20 +926,37 @@ export const getWholesalerProducts = async (req: AuthRequest, res: Response) => 
       return res.status(404).json({ error: 'Retailer profile not found' });
     }
 
-    // Check if retailer is linked to a wholesaler
-    if (!retailerProfile.linkedWholesalerId) {
-      return res.status(403).json({
-        success: false,
-        error: 'You must be linked to a wholesaler to view products. Please send a link request to a wholesaler first.',
-        requiresLinking: true,
-        products: []
+    const isLinked = !!retailerProfile.linkedWholesalerId;
+    let canBuy = false;
+    let viewingWholesalerId: number | null = null;
+
+    const where: any = { status: 'active' };
+
+    // Case 1: Viewing specific wholesaler's products (for discovery)
+    if (wholesalerId) {
+      viewingWholesalerId = parseInt(wholesalerId as string);
+      where.wholesalerId = viewingWholesalerId;
+
+      // Can only buy if this is the linked wholesaler
+      canBuy = isLinked && retailerProfile.linkedWholesalerId === viewingWholesalerId;
+    }
+    // Case 2: No wholesalerId specified
+    else if (isLinked) {
+      // Show linked wholesaler's products
+      viewingWholesalerId = retailerProfile.linkedWholesalerId;
+      where.wholesalerId = retailerProfile.linkedWholesalerId;
+      canBuy = true;
+    } else {
+      // Not linked and no wholesalerId specified - return empty with guidance
+      return res.json({
+        success: true,
+        products: [],
+        isLinked: false,
+        canBuy: false,
+        linkedWholesalerId: null,
+        message: 'Please select a wholesaler to view their products, or link with a wholesaler to start ordering.'
       });
     }
-
-    const where: any = {
-      wholesalerId: retailerProfile.linkedWholesalerId, // Only products from linked wholesaler
-      status: 'active'
-    };
 
     if (search) {
       where.OR = [
@@ -953,25 +971,43 @@ export const getWholesalerProducts = async (req: AuthRequest, res: Response) => 
 
     const products = await prisma.product.findMany({
       where,
-      include: { wholesalerProfile: true }, // Include wholesaler info
+      include: { wholesalerProfile: true },
       take: parseInt(limit as string),
       skip: parseInt(offset as string),
       orderBy: { name: 'asc' }
     });
+
+    // Get wholesaler info
+    let wholesalerInfo = null;
+    if (viewingWholesalerId) {
+      const wholesaler = await prisma.wholesalerProfile.findUnique({
+        where: { id: viewingWholesalerId },
+        select: { id: true, companyName: true, address: true }
+      });
+      wholesalerInfo = wholesaler;
+    }
 
     // Map to frontend expected format
     const formattedProducts = products.map(p => ({
       id: p.id,
       name: p.name,
       category: p.category,
-      wholesaler_price: p.price, // Wholesaler's selling price
+      wholesaler_price: p.price,
       stock_available: p.stock,
-      min_order: 1, // Default min order
+      min_order: 1,
       unit: p.unit || 'unit',
       wholesaler_name: p.wholesalerProfile?.companyName
     }));
 
-    res.json({ products: formattedProducts, linkedWholesalerId: retailerProfile.linkedWholesalerId });
+    res.json({
+      success: true,
+      products: formattedProducts,
+      isLinked,
+      canBuy,
+      linkedWholesalerId: retailerProfile.linkedWholesalerId,
+      viewingWholesalerId,
+      wholesalerInfo
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1723,8 +1759,8 @@ export const getAvailableWholesalers = async (req: AuthRequest, res: Response) =
       return res.status(404).json({ success: false, error: 'Retailer profile not found' });
     }
 
-    // Get all verified wholesalers
-    const where: any = { isVerified: true };
+    // Get ALL wholesalers for discovery (retailers can send link requests to any wholesaler)
+    const where: any = {};
     if (search) {
       where.companyName = { contains: search as string };
     }
@@ -1788,6 +1824,7 @@ export const getAvailableWholesalers = async (req: AuthRequest, res: Response) =
 };
 
 // Send link request to wholesaler
+// RULE: Retailer can send request to ONLY ONE wholesaler at a time
 export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
   try {
     const { wholesalerId, message } = req.body;
@@ -1808,7 +1845,27 @@ export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
     if (retailerProfile.linkedWholesalerId) {
       return res.status(400).json({
         success: false,
-        error: 'You are already linked to a wholesaler. Unlink first to request a new one.'
+        error: 'You are already linked to a wholesaler. Retailers can only be linked to one wholesaler.'
+      });
+    }
+
+    // IMPORTANT: Check if retailer already has ANY pending request
+    const anyPendingRequest = await prisma.linkRequest.findFirst({
+      where: {
+        retailerId: retailerProfile.id,
+        status: 'pending'
+      },
+      include: {
+        wholesaler: { select: { companyName: true } }
+      }
+    });
+
+    if (anyPendingRequest) {
+      return res.status(400).json({
+        success: false,
+        error: `You already have a pending request to ${anyPendingRequest.wholesaler.companyName}. You can only send one request at a time. Cancel the existing request to send a new one.`,
+        existingRequestId: anyPendingRequest.id,
+        existingWholesalerId: anyPendingRequest.wholesalerId
       });
     }
 
@@ -1821,7 +1878,7 @@ export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Wholesaler not found' });
     }
 
-    // Check for existing request
+    // Check for existing request to THIS wholesaler
     const existingRequest = await prisma.linkRequest.findUnique({
       where: {
         retailerId_wholesalerId: {
@@ -1832,12 +1889,6 @@ export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
     });
 
     if (existingRequest) {
-      if (existingRequest.status === 'pending') {
-        return res.status(400).json({
-          success: false,
-          error: 'You already have a pending request to this wholesaler'
-        });
-      }
       if (existingRequest.status === 'approved') {
         return res.status(400).json({
           success: false,
@@ -1845,22 +1896,24 @@ export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
         });
       }
       // If rejected, allow to send again - update the existing request
-      const updatedRequest = await prisma.linkRequest.update({
-        where: { id: existingRequest.id },
-        data: {
-          status: 'pending',
-          message: message || null,
-          rejectionReason: null,
-          respondedAt: null,
-          updatedAt: new Date()
-        }
-      });
+      if (existingRequest.status === 'rejected') {
+        const updatedRequest = await prisma.linkRequest.update({
+          where: { id: existingRequest.id },
+          data: {
+            status: 'pending',
+            message: message || null,
+            rejectionReason: null,
+            respondedAt: null,
+            updatedAt: new Date()
+          }
+        });
 
-      return res.json({
-        success: true,
-        message: 'Link request re-sent successfully',
-        request: updatedRequest
-      });
+        return res.json({
+          success: true,
+          message: 'Link request re-sent successfully',
+          request: updatedRequest
+        });
+      }
     }
 
     // Create new link request

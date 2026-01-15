@@ -820,6 +820,7 @@ export const getAvailableRetailers = async (req: AuthRequest, res: Response) => 
 };
 
 // Send link request to a retailer
+// RULE: Customer can send request to ONLY ONE retailer at a time
 export const sendCustomerLinkRequest = async (req: AuthRequest, res: Response) => {
     try {
         const { retailerId, message } = req.body;
@@ -840,7 +841,27 @@ export const sendCustomerLinkRequest = async (req: AuthRequest, res: Response) =
             });
         }
 
-        // Check if retailer exists and is verified
+        // IMPORTANT: Check if customer already has ANY pending request
+        const anyPendingRequest = await prisma.customerLinkRequest.findFirst({
+            where: {
+                customerId: consumerProfile.id,
+                status: 'pending'
+            },
+            include: {
+                retailer: { select: { shopName: true } }
+            }
+        });
+
+        if (anyPendingRequest) {
+            return res.status(400).json({
+                success: false,
+                error: `You already have a pending request to ${anyPendingRequest.retailer.shopName}. You can only send one request at a time. Cancel the existing request to send a new one.`,
+                existingRequestId: anyPendingRequest.id,
+                existingRetailerId: anyPendingRequest.retailerId
+            });
+        }
+
+        // Check if retailer exists
         const retailer = await prisma.retailerProfile.findUnique({
             where: { id: retailerId }
         });
@@ -849,11 +870,7 @@ export const sendCustomerLinkRequest = async (req: AuthRequest, res: Response) =
             return res.status(404).json({ success: false, error: 'Retailer not found' });
         }
 
-        if (!retailer.isVerified) {
-            return res.status(400).json({ success: false, error: 'Cannot link to unverified retailer' });
-        }
-
-        // Check for existing request
+        // Check for existing request to THIS retailer
         const existingRequest = await prisma.customerLinkRequest.findUnique({
             where: {
                 customerId_retailerId: {
@@ -864,12 +881,6 @@ export const sendCustomerLinkRequest = async (req: AuthRequest, res: Response) =
         });
 
         if (existingRequest) {
-            if (existingRequest.status === 'pending') {
-                return res.status(400).json({
-                    success: false,
-                    error: 'You already have a pending request to this retailer'
-                });
-            }
             if (existingRequest.status === 'approved') {
                 return res.status(400).json({
                     success: false,
@@ -877,16 +888,18 @@ export const sendCustomerLinkRequest = async (req: AuthRequest, res: Response) =
                 });
             }
             // If rejected, allow resending by updating the existing request
-            const updatedRequest = await prisma.customerLinkRequest.update({
-                where: { id: existingRequest.id },
-                data: {
-                    status: 'pending',
-                    message: message || null,
-                    rejectionReason: null,
-                    respondedAt: null
-                }
-            });
-            return res.json({ success: true, request: updatedRequest, message: 'Link request re-sent successfully' });
+            if (existingRequest.status === 'rejected') {
+                const updatedRequest = await prisma.customerLinkRequest.update({
+                    where: { id: existingRequest.id },
+                    data: {
+                        status: 'pending',
+                        message: message || null,
+                        rejectionReason: null,
+                        respondedAt: null
+                    }
+                });
+                return res.json({ success: true, request: updatedRequest, message: 'Link request re-sent successfully' });
+            }
         }
 
         // Create new link request
