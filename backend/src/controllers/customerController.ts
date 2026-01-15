@@ -764,10 +764,8 @@ export const getAvailableRetailers = async (req: AuthRequest, res: Response) => 
             return res.status(404).json({ success: false, error: 'Consumer profile not found' });
         }
 
-        // Get all verified retailers
-        const whereClause: any = {
-            isVerified: true
-        };
+        // Get ALL retailers for discovery (customers can send link requests to any retailer)
+        const whereClause: any = {};
 
         if (search) {
             whereClause.OR = [
