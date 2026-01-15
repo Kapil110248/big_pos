@@ -267,11 +267,15 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get products
-// STRICT ENFORCEMENT: Customer can ONLY view products after linking to a retailer
+// Get products for Customer
+// NEW LOGIC:
+// - Customer can view products of ANY retailer (READ-ONLY for discovery)
+// - Customer can ONLY BUY from linked retailer
+// - If viewing specific retailer (retailerId param), show their products
+// - If no retailerId, show linked retailer's products (if linked)
 export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
-    const { category, search } = req.query;
+    const { category, search, retailerId } = req.query;
     const where: any = {};
 
     // Check if user is authenticated
@@ -288,21 +292,7 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
       where: { userId: req.user.id }
     });
 
-    if (consumerProfile) {
-      // STRICT: Consumer MUST be linked to a retailer to view products
-      if (!consumerProfile.linkedRetailerId) {
-        return res.status(403).json({
-          success: false,
-          error: 'You must be linked to a retailer to view products. Please send a link request and wait for approval.',
-          requiresLinking: true,
-          products: []
-        });
-      }
-
-      // Only show products from the linked retailer
-      where.retailerId = consumerProfile.linkedRetailerId;
-    } else {
-      // Not a consumer (maybe retailer/wholesaler accessing this endpoint)
+    if (!consumerProfile) {
       return res.status(403).json({
         success: false,
         error: 'This endpoint is for customers only',
@@ -310,11 +300,67 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const isLinked = !!consumerProfile.linkedRetailerId;
+    let canBuy = false;
+    let viewingRetailerId: number | null = null;
+
+    // Case 1: Viewing specific retailer's products (for discovery)
+    if (retailerId) {
+      viewingRetailerId = parseInt(retailerId as string);
+      where.retailerId = viewingRetailerId;
+
+      // Can only buy if this is the linked retailer
+      canBuy = isLinked && consumerProfile.linkedRetailerId === viewingRetailerId;
+    }
+    // Case 2: No retailerId specified
+    else if (isLinked) {
+      // Show linked retailer's products
+      viewingRetailerId = consumerProfile.linkedRetailerId;
+      where.retailerId = consumerProfile.linkedRetailerId;
+      canBuy = true;
+    } else {
+      // Not linked and no retailerId specified - return empty with guidance
+      return res.json({
+        success: true,
+        products: [],
+        isLinked: false,
+        canBuy: false,
+        linkedRetailerId: null,
+        message: 'Please select a retailer to view their products, or link with a retailer to start shopping.'
+      });
+    }
+
     if (category) where.category = category as string;
     if (search) where.name = { contains: search as string };
 
-    const products = await prisma.product.findMany({ where });
-    res.json({ success: true, products, linkedRetailerId: consumerProfile.linkedRetailerId });
+    const products = await prisma.product.findMany({
+      where,
+      include: {
+        retailerProfile: {
+          select: { shopName: true }
+        }
+      }
+    });
+
+    // Get retailer info
+    let retailerInfo = null;
+    if (viewingRetailerId) {
+      const retailer = await prisma.retailerProfile.findUnique({
+        where: { id: viewingRetailerId },
+        select: { id: true, shopName: true, address: true }
+      });
+      retailerInfo = retailer;
+    }
+
+    res.json({
+      success: true,
+      products,
+      isLinked,
+      canBuy,
+      linkedRetailerId: consumerProfile.linkedRetailerId,
+      viewingRetailerId,
+      retailerInfo
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

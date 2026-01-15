@@ -26,8 +26,10 @@ import {
   SendOutlined,
   EyeOutlined,
   EnvironmentOutlined,
-  PhoneOutlined
+  PhoneOutlined,
+  ShoppingCartOutlined
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/apiService';
 
 const { Title, Text } = Typography;
@@ -60,6 +62,7 @@ interface LinkRequest {
 }
 
 const RetailerDiscoveryPage: React.FC = () => {
+  const navigate = useNavigate();
   const [retailers, setRetailers] = useState<Retailer[]>([]);
   const [myRequests, setMyRequests] = useState<LinkRequest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,6 +73,9 @@ const RetailerDiscoveryPage: React.FC = () => {
   const [requestModalVisible, setRequestModalVisible] = useState(false);
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(false);
+
+  // Check if customer already has a pending request
+  const hasPendingRequest = myRequests.some(r => r.status === 'pending');
 
   useEffect(() => {
     fetchRetailers();
@@ -200,6 +206,19 @@ const RetailerDiscoveryPage: React.FC = () => {
       key: 'actions',
       render: (_: any, record: Retailer) => (
         <Space>
+          {/* View Products Button - Always visible for discovery */}
+          <Tooltip title={record.isLinked ? "View & Shop" : "View Products (Read-Only)"}>
+            <Button
+              icon={<ShoppingCartOutlined />}
+              size="small"
+              type={record.isLinked ? "primary" : "default"}
+              onClick={() => navigate(`/consumer/shop?retailerId=${record.id}`)}
+            >
+              {record.isLinked ? 'Shop' : 'View Products'}
+            </Button>
+          </Tooltip>
+
+          {/* View Details Button */}
           <Button
             icon={<EyeOutlined />}
             size="small"
@@ -208,9 +227,11 @@ const RetailerDiscoveryPage: React.FC = () => {
               setViewModalVisible(true);
             }}
           >
-            View
+            Details
           </Button>
-          {!record.isLinked && !currentLinkedId && record.requestStatus !== 'pending' && (
+
+          {/* Send Request Button - Only if not linked and no pending request */}
+          {!record.isLinked && !currentLinkedId && !hasPendingRequest && record.requestStatus !== 'pending' && (
             <Button
               type="primary"
               icon={<SendOutlined />}
@@ -220,9 +241,11 @@ const RetailerDiscoveryPage: React.FC = () => {
                 setRequestModalVisible(true);
               }}
             >
-              {record.requestStatus === 'rejected' ? 'Resend Request' : 'Send Request'}
+              {record.requestStatus === 'rejected' ? 'Resend' : 'Link'}
             </Button>
           )}
+
+          {/* Cancel Request Button */}
           {record.requestStatus === 'pending' && (
             <Button
               danger
