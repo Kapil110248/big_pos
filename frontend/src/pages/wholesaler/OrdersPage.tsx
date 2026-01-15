@@ -48,6 +48,17 @@ interface OrderItem {
   }
 }
 
+interface RetailerInfo {
+  shopName?: string;
+  address?: string;
+  location?: string;
+  user?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
+}
+
 interface RetailerOrder {
   id: string;
   orderNumber: string;
@@ -64,14 +75,9 @@ interface RetailerOrder {
   tracking_number?: string;
   delivery_notes?: string;
   rejection_reason?: string;
-  retailer: {
-    shopName: string;
-    user: {
-      name: string;
-      phone: string;
-    };
-    location?: string;
-  };
+  // Support both naming conventions from backend
+  retailer?: RetailerInfo;
+  retailerProfile?: RetailerInfo;
 }
 
 interface OrderStats {
@@ -100,6 +106,13 @@ const paymentTypeColors: Record<string, string> = {
   bank_transfer: 'blue',
   cash: 'green',
   mobile_money: 'purple',
+};
+
+// Helper function to get retailer info from order (handles both naming conventions)
+const getRetailerInfo = (order: RetailerOrder | null): RetailerInfo => {
+  if (!order) return {};
+  // Backend may return 'retailerProfile' or 'retailer' depending on the endpoint
+  return order.retailer || order.retailerProfile || {};
 };
 
 const OrdersPage = () => {
@@ -304,12 +317,15 @@ const OrdersPage = () => {
     {
       title: 'Retailer',
       key: 'retailer',
-      render: (_: any, record: RetailerOrder) => (
-        <div>
-          <div><strong>{record.retailer?.shopName || record.retailer?.user?.name}</strong></div>
-          <Text type="secondary" style={{ fontSize: '12px' }}>{record.retailer?.location || 'General'}</Text>
-        </div>
-      ),
+      render: (_: any, record: RetailerOrder) => {
+        const retailer = getRetailerInfo(record);
+        return (
+          <div>
+            <div><strong>{retailer.shopName || retailer.user?.name || 'N/A'}</strong></div>
+            <Text type="secondary" style={{ fontSize: '12px' }}>{retailer.location || retailer.address || 'General'}</Text>
+          </div>
+        );
+      },
     },
     {
       title: 'Items',
@@ -568,18 +584,21 @@ const OrdersPage = () => {
         okText="Confirm Order"
       >
         <p>Are you sure you want to confirm this order?</p>
-        {selectedOrder && (
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="Retailer">{selectedOrder.retailer.shopName}</Descriptions.Item>
-            <Descriptions.Item label="Items">{selectedOrder.items?.length || 0}</Descriptions.Item>
-            <Descriptions.Item label="Total">{selectedOrder.totalAmount?.toLocaleString()} RWF</Descriptions.Item>
-            <Descriptions.Item label="Payment">
-              <Tag color={paymentTypeColors[selectedOrder.paymentType]}>
-                {selectedOrder.paymentType?.replace('_', ' ').toUpperCase()}
-              </Tag>
-            </Descriptions.Item>
-          </Descriptions>
-        )}
+        {selectedOrder && (() => {
+          const retailer = getRetailerInfo(selectedOrder);
+          return (
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="Retailer">{retailer.shopName || retailer.user?.name || 'N/A'}</Descriptions.Item>
+              <Descriptions.Item label="Items">{selectedOrder.items?.length || 0}</Descriptions.Item>
+              <Descriptions.Item label="Total">{selectedOrder.totalAmount?.toLocaleString()} RWF</Descriptions.Item>
+              <Descriptions.Item label="Payment">
+                <Tag color={paymentTypeColors[selectedOrder.paymentType] || 'default'}>
+                  {selectedOrder.paymentType?.replace('_', ' ').toUpperCase() || 'N/A'}
+                </Tag>
+              </Descriptions.Item>
+            </Descriptions>
+          );
+        })()}
       </Modal>
 
       {/* Reject Modal */}
@@ -688,61 +707,63 @@ const OrdersPage = () => {
           ),
         ].filter(Boolean)}
       >
-        {selectedOrder && (
-          <>
-            {selectedOrder.status !== 'rejected' && selectedOrder.status !== 'cancelled' && (
-              <Steps
-                current={getStatusStep(selectedOrder.status)}
-                style={{ marginBottom: '24px' }}
-                items={[
-                  { title: 'Pending', icon: <ClockCircleOutlined /> },
-                  { title: 'Processing', icon: <ShoppingCartOutlined /> },
-                  { title: 'Shipped', icon: <CarOutlined /> },
-                  { title: 'Delivered', icon: <CheckCircleOutlined /> },
-                ]}
-              />
-            )}
+        {selectedOrder && (() => {
+          const retailer = getRetailerInfo(selectedOrder);
+          return (
+            <>
+              {selectedOrder.status !== 'rejected' && selectedOrder.status !== 'cancelled' && (
+                <Steps
+                  current={getStatusStep(selectedOrder.status)}
+                  style={{ marginBottom: '24px' }}
+                  items={[
+                    { title: 'Pending', icon: <ClockCircleOutlined /> },
+                    { title: 'Processing', icon: <ShoppingCartOutlined /> },
+                    { title: 'Shipped', icon: <CarOutlined /> },
+                    { title: 'Delivered', icon: <CheckCircleOutlined /> },
+                  ]}
+                />
+              )}
 
-            <Row gutter={[16, 16]}>
-              <Col span={24}>
-                <Card size="small" title="Order Details">
-                  <Descriptions column={{ xs: 1, sm: 2 }} size="small">
-                    <Descriptions.Item label="Order Number">
-                      <Text code>{selectedOrder.orderNumber}</Text>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Status">
-                      <Tag color={statusColors[selectedOrder.status]}>{selectedOrder.status?.toUpperCase()}</Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Retailer">{selectedOrder.retailer?.shopName || selectedOrder.retailer?.user?.name}</Descriptions.Item>
-                    <Descriptions.Item label="Phone">{selectedOrder.retailer?.user?.phone}</Descriptions.Item>
-                    <Descriptions.Item label="Location">{selectedOrder.retailer?.location || 'General'}</Descriptions.Item>
-                    <Descriptions.Item label="Payment Type">
-                      <Tag color={paymentTypeColors[selectedOrder.paymentType]}>
-                        {selectedOrder.paymentType?.replace('_', ' ').toUpperCase()}
-                      </Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Payment Status">
-                      <Tag color={selectedOrder.paymentStatus === 'paid' ? 'green' : selectedOrder.paymentStatus === 'partial' ? 'orange' : 'default'}>
-                        {selectedOrder.paymentStatus?.toUpperCase()}
-                      </Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Order Date">
-                      {formatDate(selectedOrder.createdAt)}
-                    </Descriptions.Item>
-                    {selectedOrder.tracking_number && (
-                      <Descriptions.Item label="Tracking #">{selectedOrder.tracking_number}</Descriptions.Item>
-                    )}
-                    {selectedOrder.delivery_notes && (
-                      <Descriptions.Item label="Delivery Notes">{selectedOrder.delivery_notes}</Descriptions.Item>
-                    )}
-                    {selectedOrder.rejection_reason && (
-                      <Descriptions.Item label="Rejection Reason">
-                        <Text type="danger">{selectedOrder.rejection_reason}</Text>
+              <Row gutter={[16, 16]}>
+                <Col span={24}>
+                  <Card size="small" title="Order Details">
+                    <Descriptions column={{ xs: 1, sm: 2 }} size="small">
+                      <Descriptions.Item label="Order Number">
+                        <Text code>{selectedOrder.orderNumber}</Text>
                       </Descriptions.Item>
-                    )}
-                  </Descriptions>
-                </Card>
-              </Col>
+                      <Descriptions.Item label="Status">
+                        <Tag color={statusColors[selectedOrder.status]}>{selectedOrder.status?.toUpperCase()}</Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Retailer">{retailer.shopName || retailer.user?.name || 'N/A'}</Descriptions.Item>
+                      <Descriptions.Item label="Phone">{retailer.user?.phone || 'N/A'}</Descriptions.Item>
+                      <Descriptions.Item label="Location">{retailer.location || retailer.address || 'General'}</Descriptions.Item>
+                      <Descriptions.Item label="Payment Type">
+                        <Tag color={paymentTypeColors[selectedOrder.paymentType] || 'default'}>
+                          {selectedOrder.paymentType?.replace('_', ' ').toUpperCase() || 'N/A'}
+                        </Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Payment Status">
+                        <Tag color={selectedOrder.paymentStatus === 'paid' ? 'green' : selectedOrder.paymentStatus === 'partial' ? 'orange' : 'default'}>
+                          {selectedOrder.paymentStatus?.toUpperCase() || 'N/A'}
+                        </Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Order Date">
+                        {formatDate(selectedOrder.createdAt)}
+                      </Descriptions.Item>
+                      {selectedOrder.tracking_number && (
+                        <Descriptions.Item label="Tracking #">{selectedOrder.tracking_number}</Descriptions.Item>
+                      )}
+                      {selectedOrder.delivery_notes && (
+                        <Descriptions.Item label="Delivery Notes">{selectedOrder.delivery_notes}</Descriptions.Item>
+                      )}
+                      {selectedOrder.rejection_reason && (
+                        <Descriptions.Item label="Rejection Reason">
+                          <Text type="danger">{selectedOrder.rejection_reason}</Text>
+                        </Descriptions.Item>
+                      )}
+                    </Descriptions>
+                  </Card>
+                </Col>
 
               {selectedOrder.items && selectedOrder.items.length > 0 && (
                 <Col span={24}>
@@ -825,7 +846,8 @@ const OrdersPage = () => {
               </Col>
             </Row>
           </>
-        )}
+          );
+        })()}
       </Modal>
     </div>
   );
