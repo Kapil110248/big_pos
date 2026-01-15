@@ -269,38 +269,53 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
 };
 
 // Get products
-// Allow browsing products - linking restriction is enforced only on ORDER placement
+// STRICT ENFORCEMENT: Customer can ONLY view products after linking to a retailer
 export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
-    const { retailerId, category, search } = req.query;
+    const { category, search } = req.query;
     const where: any = {};
 
-    // If retailerId is provided, filter by that retailer
-    if (retailerId) {
-      const parsedId = Number(retailerId);
-      if (isNaN(parsedId)) {
-        return res.json({ products: [] });
-      }
-      where.retailerId = parsedId;
+    // Check if user is authenticated
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Please login to view products',
+        products: []
+      });
     }
 
-    // If user is authenticated consumer with a linked retailer, prioritize their linked retailer
-    if (req.user) {
-      const consumerProfile = await prisma.consumerProfile.findUnique({
-        where: { userId: req.user.id }
-      });
+    // Check if user is a consumer
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user.id }
+    });
 
-      // If consumer is linked and no retailerId specified, show linked retailer's products
-      if (consumerProfile?.linkedRetailerId && !retailerId) {
-        where.retailerId = consumerProfile.linkedRetailerId;
+    if (consumerProfile) {
+      // STRICT: Consumer MUST be linked to a retailer to view products
+      if (!consumerProfile.linkedRetailerId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You must be linked to a retailer to view products. Please send a link request and wait for approval.',
+          requiresLinking: true,
+          products: []
+        });
       }
+
+      // Only show products from the linked retailer
+      where.retailerId = consumerProfile.linkedRetailerId;
+    } else {
+      // Not a consumer (maybe retailer/wholesaler accessing this endpoint)
+      return res.status(403).json({
+        success: false,
+        error: 'This endpoint is for customers only',
+        products: []
+      });
     }
 
     if (category) where.category = category as string;
     if (search) where.name = { contains: search as string };
 
     const products = await prisma.product.findMany({ where });
-    res.json({ products });
+    res.json({ success: true, products, linkedRetailerId: consumerProfile.linkedRetailerId });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
