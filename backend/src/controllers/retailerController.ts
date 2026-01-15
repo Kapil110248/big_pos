@@ -819,23 +819,32 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 export const updateSaleStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    let { status, notes } = req.body;
 
     const retailerProfile = await prisma.retailerProfile.findUnique({
       where: { userId: req.user!.id }
     });
 
+    if (!retailerProfile) {
+      return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
     const currentSale = await prisma.sale.findUnique({ where: { id: Number(id) } });
-    if (!currentSale || currentSale.retailerId !== retailerProfile?.id) {
+    if (!currentSale || currentSale.retailerId !== retailerProfile.id) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // State machine: pending -> confirmed -> ready -> completed / cancelled
+    // Map frontend status names to backend: processing = confirmed
+    if (status === 'processing') status = 'confirmed';
+
+    // State machine: pending -> confirmed/processing -> ready -> completed / cancelled
     const validTransitions: Record<string, string[]> = {
-      'pending': ['confirmed', 'cancelled'],
+      'pending': ['confirmed', 'processing', 'cancelled'],
       'confirmed': ['ready', 'cancelled'],
-      'ready': ['completed'],
+      'processing': ['ready', 'cancelled'],
+      'ready': ['completed', 'delivered'],
       'completed': [],
+      'delivered': [],
       'cancelled': []
     };
 
@@ -851,6 +860,82 @@ export const updateSaleStatus = async (req: AuthRequest, res: Response) => {
     });
 
     res.json({ success: true, sale });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Cancel a sale/order
+export const cancelSale = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
+    const currentSale = await prisma.sale.findUnique({ where: { id: Number(id) } });
+    if (!currentSale || currentSale.retailerId !== retailerProfile.id) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Can only cancel pending or confirmed orders
+    if (!['pending', 'confirmed', 'processing'].includes(currentSale.status)) {
+      return res.status(400).json({
+        error: `Cannot cancel order in ${currentSale.status} status`
+      });
+    }
+
+    const sale = await prisma.sale.update({
+      where: { id: Number(id) },
+      data: {
+        status: 'cancelled'
+        // Could add cancelReason field if exists in schema
+      }
+    });
+
+    res.json({ success: true, sale, message: 'Order cancelled successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Fulfill/Complete an order
+export const fulfillSale = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
+    const currentSale = await prisma.sale.findUnique({ where: { id: Number(id) } });
+    if (!currentSale || currentSale.retailerId !== retailerProfile.id) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Can only fulfill ready orders
+    if (!['ready', 'confirmed', 'processing'].includes(currentSale.status)) {
+      return res.status(400).json({
+        error: `Cannot fulfill order in ${currentSale.status} status`
+      });
+    }
+
+    const sale = await prisma.sale.update({
+      where: { id: Number(id) },
+      data: { status: 'completed' }
+    });
+
+    res.json({ success: true, sale, message: 'Order completed successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

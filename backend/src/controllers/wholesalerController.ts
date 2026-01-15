@@ -1153,30 +1153,17 @@ export const approveLinkRequest = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check if retailer is already linked to another wholesaler
-    if (request.retailer.linkedWholesalerId && request.retailer.linkedWholesalerId !== wholesalerProfile.id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Retailer is already linked to another wholesaler'
-      });
-    }
+    // NEW: Retailer can be linked to MULTIPLE wholesalers
+    // No need to check if already linked elsewhere - just approve this request
+    // The LinkRequest table tracks per-wholesaler approval status
 
-    // Transaction: Approve request and link retailer
-    await prisma.$transaction(async (prisma) => {
-      // 1. Update request status
-      await prisma.linkRequest.update({
-        where: { id: request.id },
-        data: {
-          status: 'approved',
-          respondedAt: new Date()
-        }
-      });
-
-      // 2. Link retailer to this wholesaler
-      await prisma.retailerProfile.update({
-        where: { id: request.retailerId },
-        data: { linkedWholesalerId: wholesalerProfile.id }
-      });
+    // Update request status to approved
+    await prisma.linkRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'approved',
+        respondedAt: new Date()
+      }
     });
 
     res.json({
@@ -1291,6 +1278,7 @@ export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
 };
 
 // Unlink a retailer
+// NEW: Uses LinkRequest table - updates status to 'rejected' or deletes the request
 export const unlinkRetailer = async (req: AuthRequest, res: Response) => {
   try {
     const { retailerId } = req.params;
@@ -1303,26 +1291,37 @@ export const unlinkRetailer = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
     }
 
-    const retailer = await prisma.retailerProfile.findFirst({
+    // Find the approved link request for this retailer-wholesaler pair
+    const linkRequest = await prisma.linkRequest.findUnique({
       where: {
-        id: parseInt(retailerId),
-        linkedWholesalerId: wholesalerProfile.id
-      }
+        retailerId_wholesalerId: {
+          retailerId: parseInt(retailerId),
+          wholesalerId: wholesalerProfile.id
+        }
+      },
+      include: { retailer: true }
     });
 
-    if (!retailer) {
-      return res.status(404).json({ success: false, error: 'Retailer not found or not linked to you' });
+    if (!linkRequest) {
+      return res.status(404).json({ success: false, error: 'Link request not found' });
     }
 
-    // Unlink
-    await prisma.retailerProfile.update({
-      where: { id: retailer.id },
-      data: { linkedWholesalerId: null }
+    if (linkRequest.status !== 'approved') {
+      return res.status(400).json({ success: false, error: 'Retailer is not currently linked to you' });
+    }
+
+    // Update link request status to 'unlinked' (or delete it)
+    await prisma.linkRequest.update({
+      where: { id: linkRequest.id },
+      data: {
+        status: 'unlinked',
+        respondedAt: new Date()
+      }
     });
 
     res.json({
       success: true,
-      message: `${retailer.shopName} has been unlinked`
+      message: `${linkRequest.retailer.shopName} has been unlinked`
     });
   } catch (error: any) {
     console.error('Error unlinking retailer:', error);
