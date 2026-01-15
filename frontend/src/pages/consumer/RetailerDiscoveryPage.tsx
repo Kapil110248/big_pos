@@ -204,62 +204,91 @@ const RetailerDiscoveryPage: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: Retailer) => (
-        <Space>
-          {/* View Products Button - Always visible for discovery */}
-          <Tooltip title={record.isLinked ? "View & Shop" : "View Products (Read-Only)"}>
+      width: 320,
+      render: (_: any, record: Retailer) => {
+        // Determine what button to show
+        const isThisRetailerLinked = record.isLinked;
+        const hasRequestToThisRetailer = record.requestStatus === 'pending';
+        const isAlreadyLinkedToAnother = currentLinkedId && !isThisRetailerLinked;
+        const hasPendingToAnother = hasPendingRequest && !hasRequestToThisRetailer;
+
+        return (
+          <Space wrap>
+            {/* View Products Button */}
             <Button
               icon={<ShoppingCartOutlined />}
               size="small"
-              type={record.isLinked ? "primary" : "default"}
+              type={isThisRetailerLinked ? "primary" : "default"}
               onClick={() => navigate(`/consumer/shop?retailerId=${record.id}`)}
             >
-              {record.isLinked ? 'Shop' : 'View Products'}
+              {isThisRetailerLinked ? 'Shop Now' : 'View Products'}
             </Button>
-          </Tooltip>
 
-          {/* View Details Button */}
-          <Button
-            icon={<EyeOutlined />}
-            size="small"
-            onClick={() => {
-              setSelectedRetailer(record);
-              setViewModalVisible(true);
-            }}
-          >
-            Details
-          </Button>
+            {/* CASE 1: Customer is LINKED to this retailer */}
+            {isThisRetailerLinked && (
+              <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
+                Your Retailer
+              </Tag>
+            )}
 
-          {/* Send Request Button - Only if not linked and no pending request */}
-          {!record.isLinked && !currentLinkedId && !hasPendingRequest && record.requestStatus !== 'pending' && (
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              size="small"
-              onClick={() => {
-                setSelectedRetailer(record);
-                setRequestModalVisible(true);
-              }}
-            >
-              {record.requestStatus === 'rejected' ? 'Resend' : 'Link'}
-            </Button>
-          )}
+            {/* CASE 2: Customer has PENDING request to this retailer */}
+            {hasRequestToThisRetailer && (
+              <>
+                <Tag color="orange" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>
+                  Waiting for Approval
+                </Tag>
+                <Button
+                  danger
+                  size="small"
+                  onClick={() => {
+                    const req = myRequests.find(r => r.retailerId === record.id && r.status === 'pending');
+                    if (req) handleCancelRequest(req.id);
+                  }}
+                >
+                  Cancel Request
+                </Button>
+              </>
+            )}
 
-          {/* Cancel Request Button */}
-          {record.requestStatus === 'pending' && (
-            <Button
-              danger
-              size="small"
-              onClick={() => {
-                const req = myRequests.find(r => r.retailerId === record.id && r.status === 'pending');
-                if (req) handleCancelRequest(req.id);
-              }}
-            >
-              Cancel
-            </Button>
-          )}
-        </Space>
-      ),
+            {/* CASE 3: Customer is linked to ANOTHER retailer */}
+            {isAlreadyLinkedToAnother && (
+              <Tag color="default" style={{ margin: 0 }}>
+                Already Linked Elsewhere
+              </Tag>
+            )}
+
+            {/* CASE 4: Customer has pending request to ANOTHER retailer */}
+            {!isThisRetailerLinked && !hasRequestToThisRetailer && hasPendingToAnother && (
+              <Tag color="orange" style={{ margin: 0 }}>
+                Pending Request Elsewhere
+              </Tag>
+            )}
+
+            {/* CASE 5: Customer can send link request (NOT linked, NO pending requests anywhere) */}
+            {!isThisRetailerLinked && !currentLinkedId && !hasPendingRequest && record.requestStatus !== 'pending' && (
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                size="small"
+                style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                onClick={() => {
+                  setSelectedRetailer(record);
+                  setRequestModalVisible(true);
+                }}
+              >
+                {record.requestStatus === 'rejected' ? 'Resend Link Request' : 'Send Link Request'}
+              </Button>
+            )}
+
+            {/* CASE 6: Request was REJECTED - can resend */}
+            {!isThisRetailerLinked && !currentLinkedId && !hasPendingRequest && record.requestStatus === 'rejected' && (
+              <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>
+                Previously Rejected
+              </Tag>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -354,11 +383,23 @@ const RetailerDiscoveryPage: React.FC = () => {
           <Button key="close" onClick={() => setViewModalVisible(false)}>
             Close
           </Button>,
-          !selectedRetailer?.isLinked && !currentLinkedId && selectedRetailer?.requestStatus !== 'pending' && (
+          <Button
+            key="products"
+            icon={<ShoppingCartOutlined />}
+            onClick={() => {
+              setViewModalVisible(false);
+              navigate(`/consumer/shop?retailerId=${selectedRetailer?.id}`);
+            }}
+          >
+            View Products
+          </Button>,
+          // Show Send Link Request button if customer is not linked and no pending request
+          !selectedRetailer?.isLinked && !currentLinkedId && !hasPendingRequest && selectedRetailer?.requestStatus !== 'pending' && (
             <Button
               key="request"
               type="primary"
               icon={<SendOutlined />}
+              style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
               onClick={() => {
                 setViewModalVisible(false);
                 setRequestModalVisible(true);
@@ -371,29 +412,72 @@ const RetailerDiscoveryPage: React.FC = () => {
         width={600}
       >
         {selectedRetailer && (
-          <Descriptions bordered column={1}>
-            <Descriptions.Item label="Shop Name">
-              {selectedRetailer.shopName}
-              {selectedRetailer.isVerified && (
-                <Tag color="green" style={{ marginLeft: 8 }}>Verified</Tag>
-              )}
-            </Descriptions.Item>
-            <Descriptions.Item label="Phone">
-              {selectedRetailer.phone || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Email">
-              {selectedRetailer.email || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Address">
-              {selectedRetailer.address || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Products Available">
-              {selectedRetailer.productCount}
-            </Descriptions.Item>
-            <Descriptions.Item label="Link Status">
-              {getStatusTag(selectedRetailer)}
-            </Descriptions.Item>
-          </Descriptions>
+          <>
+            <Descriptions bordered column={1}>
+              <Descriptions.Item label="Shop Name">
+                {selectedRetailer.shopName}
+                {selectedRetailer.isVerified && (
+                  <Tag color="green" style={{ marginLeft: 8 }}>Verified</Tag>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Phone">
+                {selectedRetailer.phone || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Email">
+                {selectedRetailer.email || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Address">
+                {selectedRetailer.address || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Products Available">
+                {selectedRetailer.productCount}
+              </Descriptions.Item>
+              <Descriptions.Item label="Link Status">
+                {getStatusTag(selectedRetailer)}
+              </Descriptions.Item>
+            </Descriptions>
+
+            {/* Show appropriate message based on status */}
+            {selectedRetailer.isLinked && (
+              <Alert
+                message="You are linked to this retailer"
+                description="You can browse products and place orders from this retailer."
+                type="success"
+                showIcon
+                style={{ marginTop: 16 }}
+              />
+            )}
+
+            {selectedRetailer.requestStatus === 'pending' && (
+              <Alert
+                message="Link Request Pending"
+                description="Your link request is waiting for this retailer's approval. You will be notified once approved."
+                type="warning"
+                showIcon
+                style={{ marginTop: 16 }}
+              />
+            )}
+
+            {!selectedRetailer.isLinked && !currentLinkedId && !hasPendingRequest && selectedRetailer.requestStatus !== 'pending' && (
+              <Alert
+                message="Send a Link Request"
+                description="Click 'Send Link Request' button below to request linking with this retailer. Once approved, you can place orders."
+                type="info"
+                showIcon
+                style={{ marginTop: 16 }}
+              />
+            )}
+
+            {currentLinkedId && !selectedRetailer.isLinked && (
+              <Alert
+                message="Already Linked to Another Retailer"
+                description="You are already linked to a different retailer. Customers can only be linked to one retailer at a time."
+                type="warning"
+                showIcon
+                style={{ marginTop: 16 }}
+              />
+            )}
+          </>
         )}
       </Modal>
 
