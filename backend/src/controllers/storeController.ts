@@ -160,9 +160,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
     const { district, sector, cell, search } = req.query;
-    const where: any = {
-      isVerified: true, // Only show verified retailers to customers
-    };
+    const where: any = {};
+    // Show ALL retailers so customers can discover and send link requests
 
     // Location-based filtering
     if (district || sector || cell) {
