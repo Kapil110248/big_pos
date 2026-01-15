@@ -1233,7 +1233,11 @@ export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
     }
 
-    // Get all APPROVED link requests for this wholesaler
+    // Get ALL linked retailers using BOTH methods:
+    // 1. Via LinkRequest table (new method) - status = 'approved'
+    // 2. Via linkedWholesalerId field (old method) - for backwards compatibility
+
+    // Method 1: Get retailers from approved LinkRequest entries
     const approvedRequests = await prisma.linkRequest.findMany({
       where: {
         wholesalerId: wholesalerProfile.id,
@@ -1254,7 +1258,26 @@ export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
       }
     });
 
-    const formattedRetailers = approvedRequests.map(req => ({
+    // Method 2: Get retailers with linkedWholesalerId set (old method)
+    const directlyLinkedRetailers = await prisma.retailerProfile.findMany({
+      where: {
+        linkedWholesalerId: wholesalerProfile.id
+      },
+      include: {
+        user: {
+          select: { phone: true, email: true }
+        },
+        orders: {
+          where: { wholesalerId: wholesalerProfile.id },
+          select: { id: true, totalAmount: true }
+        }
+      }
+    });
+
+    // Combine both lists and remove duplicates
+    const retailerIdsFromRequests = new Set(approvedRequests.map(req => req.retailer.id));
+
+    const formattedFromRequests = approvedRequests.map(req => ({
       id: req.retailer.id,
       shopName: req.retailer.shopName,
       address: req.retailer.address,
@@ -1263,13 +1286,33 @@ export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
       isVerified: req.retailer.isVerified,
       linkedAt: req.respondedAt || req.updatedAt,
       orderCount: req.retailer.orders.length,
-      totalPurchased: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0)
+      totalPurchased: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0),
+      linkMethod: 'request'
     }));
+
+    const formattedFromDirect = directlyLinkedRetailers
+      .filter(r => !retailerIdsFromRequests.has(r.id)) // Avoid duplicates
+      .map(r => ({
+        id: r.id,
+        shopName: r.shopName,
+        address: r.address,
+        phone: r.user?.phone,
+        email: r.user?.email,
+        isVerified: r.isVerified,
+        linkedAt: r.updatedAt,
+        orderCount: r.orders.length,
+        totalPurchased: r.orders.reduce((sum, o) => sum + o.totalAmount, 0),
+        linkMethod: 'direct'
+      }));
+
+    const allRetailers = [...formattedFromRequests, ...formattedFromDirect];
+
+    console.log(`Wholesaler ${wholesalerProfile.id}: Found ${approvedRequests.length} from LinkRequest, ${directlyLinkedRetailers.length} from direct link, ${allRetailers.length} total unique`);
 
     res.json({
       success: true,
-      retailers: formattedRetailers,
-      total: formattedRetailers.length
+      retailers: allRetailers,
+      total: allRetailers.length
     });
   } catch (error: any) {
     console.error('Error fetching linked retailers:', error);
