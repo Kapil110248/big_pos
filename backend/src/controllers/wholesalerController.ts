@@ -1235,6 +1235,7 @@ export const rejectLinkRequest = async (req: AuthRequest, res: Response) => {
 };
 
 // Get linked retailers for this wholesaler
+// NEW: Uses LinkRequest table to check approved retailers (supports multiple retailers)
 export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
   try {
     const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
@@ -1245,29 +1246,37 @@ export const getLinkedRetailers = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
     }
 
-    const retailers = await prisma.retailerProfile.findMany({
-      where: { linkedWholesalerId: wholesalerProfile.id },
+    // Get all APPROVED link requests for this wholesaler
+    const approvedRequests = await prisma.linkRequest.findMany({
+      where: {
+        wholesalerId: wholesalerProfile.id,
+        status: 'approved'
+      },
       include: {
-        user: {
-          select: { phone: true, email: true }
-        },
-        orders: {
-          where: { wholesalerId: wholesalerProfile.id },
-          select: { id: true, totalAmount: true }
+        retailer: {
+          include: {
+            user: {
+              select: { phone: true, email: true }
+            },
+            orders: {
+              where: { wholesalerId: wholesalerProfile.id },
+              select: { id: true, totalAmount: true }
+            }
+          }
         }
       }
     });
 
-    const formattedRetailers = retailers.map(r => ({
-      id: r.id,
-      shopName: r.shopName,
-      address: r.address,
-      phone: r.user?.phone,
-      email: r.user?.email,
-      isVerified: r.isVerified,
-      linkedAt: r.updatedAt,
-      orderCount: r.orders.length,
-      totalPurchased: r.orders.reduce((sum, o) => sum + o.totalAmount, 0)
+    const formattedRetailers = approvedRequests.map(req => ({
+      id: req.retailer.id,
+      shopName: req.retailer.shopName,
+      address: req.retailer.address,
+      phone: req.retailer.user?.phone,
+      email: req.retailer.user?.email,
+      isVerified: req.retailer.isVerified,
+      linkedAt: req.respondedAt || req.updatedAt,
+      orderCount: req.retailer.orders.length,
+      totalPurchased: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0)
     }));
 
     res.json({
