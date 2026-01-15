@@ -13,6 +13,8 @@ import {
   scanBarcode,
   createSale,
   updateSaleStatus,
+  cancelSale,
+  fulfillSale,
   getDailySales,
   getWholesalerProducts,
   createOrder,
@@ -51,6 +53,8 @@ router.put('/inventory/:id', updateProduct);
 router.get('/orders', getOrders);
 router.get('/orders/:id', getOrder);
 router.put('/orders/:id/status', updateSaleStatus);
+router.post('/orders/:id/cancel', cancelSale);
+router.post('/orders/:id/fulfill', fulfillSale);
 router.post('/orders', createOrder);
 router.get('/branches', getBranches);
 router.post('/branches', createBranch);
