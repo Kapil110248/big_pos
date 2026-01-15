@@ -41,6 +41,7 @@ import {
   CheckCircleOutlined,
   LockOutlined,
   DeleteOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { consumerApi, nfcApi } from '../../services/apiService';
@@ -405,16 +406,27 @@ export const ShopPage: React.FC = () => {
 
         {(selectedRetailer || urlRetailerId) ? (
           <div>
-            {/* Read-Only Banner for unlinked retailers */}
+            {/* Read-Only Banner for unlinked retailers - with Send Link Request button */}
             {!canBuy && urlRetailerId && (
               <Alert
-                message={<Text strong><LockOutlined /> Read-Only Mode</Text>}
+                message={<Text strong><LockOutlined /> Read-Only Mode - Link Required to Order</Text>}
                 description={
-                  <Space direction="vertical">
-                    <Text>You are viewing {viewingRetailerInfo?.shopName || 'this retailer'}'s products. To place orders, you must first link with this retailer.</Text>
-                    <Button type="primary" size="small" onClick={() => navigate('/consumer/discover-retailers')}>
-                      Go to Link Retailers
-                    </Button>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Text>You are viewing {viewingRetailerInfo?.shopName || 'this retailer'}'s products. To place orders, you must first send a link request and wait for approval.</Text>
+                    <Space>
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<SendOutlined />}
+                        style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                        onClick={() => navigate('/consumer/discover-retailers')}
+                      >
+                        Send Link Request
+                      </Button>
+                      <Button size="small" onClick={() => navigate('/consumer/discover-retailers')}>
+                        View All Retailers
+                      </Button>
+                    </Space>
                   </Space>
                 }
                 type="warning"
@@ -441,12 +453,25 @@ export const ShopPage: React.FC = () => {
                   </Space>
                 </Col>
                 <Col>
-                  {urlRetailerId && (
-                    <Button shape="round" onClick={() => navigate('/consumer/discover-retailers')}>Back to Retailers</Button>
-                  )}
-                  {!urlRetailerId && (
-                    <Button shape="round" onClick={() => setShowRetailerModal(true)}>Change Store</Button>
-                  )}
+                  <Space>
+                    {/* Send Link Request button - visible when not linked */}
+                    {!canBuy && urlRetailerId && (
+                      <Button
+                        type="primary"
+                        icon={<SendOutlined />}
+                        style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                        onClick={() => navigate('/consumer/discover-retailers')}
+                      >
+                        Send Link Request
+                      </Button>
+                    )}
+                    {urlRetailerId && (
+                      <Button shape="round" onClick={() => navigate('/consumer/discover-retailers')}>Back to Retailers</Button>
+                    )}
+                    {!urlRetailerId && (
+                      <Button shape="round" onClick={() => setShowRetailerModal(true)}>Change Store</Button>
+                    )}
+                  </Space>
                 </Col>
               </Row>
             </Card>
