@@ -12,6 +12,11 @@ import {
   getRetailerOrders,
   getOrder,
   updateOrderStatus,
+  getOrderStats,
+  confirmOrder,
+  rejectOrder,
+  shipOrder,
+  confirmDelivery,
   getCreditRequests,
   // Link Request Management
   getLinkRequests,
@@ -71,9 +76,13 @@ router.delete('/inventory/:id', deleteProduct);
 
 // Orders
 router.get('/retailer-orders', getRetailerOrders);
-router.get('/retailer-orders/stats', getRetailerOrders);
+router.get('/retailer-orders/stats', getOrderStats);
 router.get('/retailer-orders/:id', getOrder);
 router.put('/retailer-orders/:id/status', updateOrderStatus);
+router.post('/retailer-orders/:id/confirm', confirmOrder);
+router.post('/retailer-orders/:id/reject', rejectOrder);
+router.post('/retailer-orders/:id/ship', shipOrder);
+router.post('/retailer-orders/:id/deliver', confirmDelivery);
 
 // Credit Management (Wholesaler specific)
 router.get('/credit-requests', getCreditRequests);

@@ -22,6 +22,7 @@ import GasPage from './pages/consumer/GasPage';
 import RewardsPage from './pages/consumer/RewardsPage';
 import CreditLedgerPage from './pages/consumer/CreditLedgerPage';
 import CreditTransactionsPage from './pages/consumer/CreditTransactionsPage';
+import RetailerDiscoveryPage from './pages/consumer/RetailerDiscoveryPage';
 
 // Employee Pages
 
@@ -36,6 +37,7 @@ import AddStockPage from './pages/retailer/AddStockPage';
 import ManagementPage from './pages/retailer/ManagementPage';
 import RetailerAnalyticsPage from './pages/retailer/AnalyticsPage';
 import WholesalerDiscoveryPage from './pages/retailer/WholesalerDiscoveryPage';
+import CustomerLinkRequestsPage from './pages/retailer/CustomerLinkRequestsPage';
 
 // Wholesaler Pages
 import { WholesalerDashboard } from './pages/wholesaler/WholesalerDashboard';
@@ -109,7 +111,8 @@ function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Navigate to="/consumer/retailers" replace />} />
+              <Route index element={<Navigate to="/consumer/discover-retailers" replace />} />
+              <Route path="discover-retailers" element={<RetailerDiscoveryPage />} />
               <Route path="retailers" element={<ConsumerRetailersPage />} />
               <Route path="shop" element={<ShopPage />} />
               <Route path="orders" element={<ConsumerOrdersPage />} />
@@ -152,6 +155,7 @@ function App() {
               <Route path="management" element={<ManagementPage />} />
               <Route path="analytics" element={<RetailerAnalyticsPage />} />
               <Route path="wholesalers" element={<WholesalerDiscoveryPage />} />
+              <Route path="customer-requests" element={<CustomerLinkRequestsPage />} />
               <Route path="profile" element={<ProfileSettingsPage />} />
             </Route>
 

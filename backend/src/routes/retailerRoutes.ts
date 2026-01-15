@@ -30,7 +30,13 @@ import {
   getAvailableWholesalers,
   sendLinkRequest,
   getMyLinkRequests,
-  cancelLinkRequest
+  cancelLinkRequest,
+  // Customer Link Request Management APIs
+  getCustomerLinkRequests,
+  approveCustomerLinkRequest,
+  rejectCustomerLinkRequest,
+  getLinkedCustomers,
+  unlinkCustomer
 } from '../controllers/retailerController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -80,5 +86,12 @@ router.get('/wholesalers/available', getAvailableWholesalers);
 router.post('/wholesalers/link-request', sendLinkRequest);
 router.get('/wholesalers/link-requests', getMyLinkRequests);
 router.delete('/wholesalers/link-request/:requestId', cancelLinkRequest);
+
+// Customer Link Request Management Routes (Retailer manages customer requests)
+router.get('/customer-link-requests', getCustomerLinkRequests);
+router.post('/customer-link-requests/:requestId/approve', approveCustomerLinkRequest);
+router.post('/customer-link-requests/:requestId/reject', rejectCustomerLinkRequest);
+router.get('/linked-customers', getLinkedCustomers);
+router.delete('/linked-customers/:customerId', unlinkCustomer);
 
 export default router;

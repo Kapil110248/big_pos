@@ -702,6 +702,237 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Get order statistics
+export const getOrderStats = async (req: AuthRequest, res: Response) => {
+  try {
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ error: 'Wholesaler profile not found' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [allOrders, todayOrders] = await Promise.all([
+      prisma.order.findMany({
+        where: { wholesalerId: wholesalerProfile.id }
+      }),
+      prisma.order.findMany({
+        where: {
+          wholesalerId: wholesalerProfile.id,
+          createdAt: { gte: today, lt: tomorrow }
+        }
+      })
+    ]);
+
+    const stats = {
+      total_orders: allOrders.length,
+      pending_orders: allOrders.filter(o => o.status === 'pending').length,
+      confirmed_orders: allOrders.filter(o => o.status === 'confirmed').length,
+      processing_orders: allOrders.filter(o => o.status === 'processing').length,
+      shipped_orders: allOrders.filter(o => o.status === 'shipped').length,
+      delivered_orders: allOrders.filter(o => o.status === 'delivered').length,
+      cancelled_orders: allOrders.filter(o => o.status === 'cancelled').length,
+      rejected_orders: allOrders.filter(o => o.status === 'rejected').length,
+      total_revenue: allOrders.filter(o => o.status === 'delivered').reduce((sum, o) => sum + o.totalAmount, 0),
+      today_orders: todayOrders.length,
+      today_revenue: todayOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+    };
+
+    res.json({ stats });
+  } catch (error: any) {
+    console.error('Error fetching order stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Confirm a pending order
+export const confirmOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.wholesalerId !== wholesalerProfile.id) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to confirm this order' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ success: false, error: `Cannot confirm order with status: ${order.status}` });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: Number(id) },
+      data: { status: 'confirmed' },
+      include: {
+        orderItems: { include: { product: true } },
+        retailerProfile: { include: { user: true } }
+      }
+    });
+
+    res.json({ success: true, order: updatedOrder, message: 'Order confirmed successfully' });
+  } catch (error: any) {
+    console.error('Error confirming order:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Reject an order with reason
+export const rejectOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.wholesalerId !== wholesalerProfile.id) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to reject this order' });
+    }
+
+    if (!['pending', 'confirmed'].includes(order.status)) {
+      return res.status(400).json({ success: false, error: `Cannot reject order with status: ${order.status}` });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: Number(id) },
+      data: { status: 'rejected' },
+      include: {
+        orderItems: { include: { product: true } },
+        retailerProfile: { include: { user: true } }
+      }
+    });
+
+    res.json({ success: true, order: updatedOrder, message: 'Order rejected successfully' });
+  } catch (error: any) {
+    console.error('Error rejecting order:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Ship an order with tracking info
+export const shipOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { tracking_number, delivery_notes } = req.body;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.wholesalerId !== wholesalerProfile.id) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to ship this order' });
+    }
+
+    if (order.status !== 'confirmed') {
+      return res.status(400).json({ success: false, error: `Cannot ship order with status: ${order.status}. Order must be confirmed first.` });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: Number(id) },
+      data: { status: 'shipped' },
+      include: {
+        orderItems: { include: { product: true } },
+        retailerProfile: { include: { user: true } }
+      }
+    });
+
+    res.json({ success: true, order: updatedOrder, message: 'Order shipped successfully' });
+  } catch (error: any) {
+    console.error('Error shipping order:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Confirm delivery of an order
+export const confirmDelivery = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.wholesalerId !== wholesalerProfile.id) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to confirm delivery for this order' });
+    }
+
+    if (order.status !== 'shipped') {
+      return res.status(400).json({ success: false, error: `Cannot confirm delivery for order with status: ${order.status}. Order must be shipped first.` });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: Number(id) },
+      data: { status: 'delivered' },
+      include: {
+        orderItems: { include: { product: true } },
+        retailerProfile: { include: { user: true } }
+      }
+    });
+
+    res.json({ success: true, order: updatedOrder, message: 'Delivery confirmed successfully' });
+  } catch (error: any) {
+    console.error('Error confirming delivery:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // ==========================================
 // CREDIT MANAGEMENT
 // ==========================================
