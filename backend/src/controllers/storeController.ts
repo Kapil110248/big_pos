@@ -269,46 +269,31 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
 };
 
 // Get products
-// REQUIREMENT #3: Customer can ONLY view products from their linked retailer after approval
+// Allow browsing products - linking restriction is enforced only on ORDER placement
 export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
     const { retailerId, category, search } = req.query;
     const where: any = {};
 
-    // ==========================================
-    // ACCOUNT LINKING ENFORCEMENT (REQUIREMENT #3)
-    // Customer can ONLY view products from their linked retailer
-    // ==========================================
-    if (req.user) {
-      // User is authenticated - check if they're linked
-      const consumerProfile = await prisma.consumerProfile.findUnique({
-        where: { userId: req.user.id }
-      });
-
-      if (consumerProfile) {
-        // Consumer must be linked to see products
-        if (!consumerProfile.linkedRetailerId) {
-          return res.status(403).json({
-            success: false,
-            error: 'You must be linked to a retailer to view products. Please send a link request and wait for approval.',
-            requiresLinking: true,
-            products: []
-          });
-        }
-
-        // Only show products from linked retailer
-        where.retailerId = consumerProfile.linkedRetailerId;
-      }
-    } else if (retailerId) {
-      // For unauthenticated users with retailerId, allow browsing (public catalog)
+    // If retailerId is provided, filter by that retailer
+    if (retailerId) {
       const parsedId = Number(retailerId);
       if (isNaN(parsedId)) {
         return res.json({ products: [] });
       }
       where.retailerId = parsedId;
-    } else {
-      // No authentication and no retailerId - return empty
-      return res.json({ products: [] });
+    }
+
+    // If user is authenticated consumer with a linked retailer, prioritize their linked retailer
+    if (req.user) {
+      const consumerProfile = await prisma.consumerProfile.findUnique({
+        where: { userId: req.user.id }
+      });
+
+      // If consumer is linked and no retailerId specified, show linked retailer's products
+      if (consumerProfile?.linkedRetailerId && !retailerId) {
+        where.retailerId = consumerProfile.linkedRetailerId;
+      }
     }
 
     if (category) where.category = category as string;
