@@ -311,6 +311,17 @@ export const retailerApi = {
     card_id?: string;
     method?: string;
   }) => api.get("/retailer/manual-payment/audit", { params }),
+
+  // Customer Link Request Management (Retailer manages customer requests)
+  getCustomerLinkRequests: (params?: any) =>
+    api.get("/retailer/customer-link-requests", { params }),
+  approveCustomerLinkRequest: (requestId: number) =>
+    api.post(`/retailer/customer-link-requests/${requestId}/approve`),
+  rejectCustomerLinkRequest: (requestId: number, reason?: string) =>
+    api.post(`/retailer/customer-link-requests/${requestId}/reject`, { reason }),
+  getLinkedCustomers: () => api.get("/retailer/linked-customers"),
+  unlinkCustomer: (customerId: number) =>
+    api.delete(`/retailer/linked-customers/${customerId}`),
 };
 
 // Wholesaler APIs

@@ -31,7 +31,12 @@ import {
   getNotificationPreferences,
   updateNotificationPreferences,
   getReferralCode,
-  redeemGasRewards
+  redeemGasRewards,
+  // Retailer Linking (Customer-Retailer Flow)
+  getAvailableRetailers,
+  sendCustomerLinkRequest,
+  getMyCustomerLinkRequests,
+  cancelCustomerLinkRequest
 } from '../controllers/customerController';
 import {
   getGasMeters,
@@ -46,14 +51,15 @@ import {
   getOrderDetails,
   recordGasUsage
 } from '../controllers/gasController';
-import { authenticate } from '../middleware/authMiddleware';
+import { authenticate, optionalAuthenticate } from '../middleware/authMiddleware';
 
 const router = Router();
 
 // Public routes
 router.get('/retailers', getRetailers);
 router.get('/categories', getCategories);
-router.get('/products', getProducts);
+// Products route with optional auth - enforces linking for authenticated consumers
+router.get('/products', optionalAuthenticate, getProducts);
 
 // Protected routes - Auth
 router.post('/auth/logout', authenticate, logout);
@@ -88,6 +94,12 @@ router.get('/gas/rewards/leaderboard', authenticate, getGasRewardsLeaderboard);
 // Rewards - Referral & Redemption
 router.get('/rewards/referral-code', authenticate, getReferralCode);
 router.post('/rewards/redeem', authenticate, redeemGasRewards);
+
+// Retailer Discovery & Link Request Routes (Customer-Retailer Linking)
+router.get('/retailers/available', authenticate, getAvailableRetailers);
+router.post('/retailers/link-request', authenticate, sendCustomerLinkRequest);
+router.get('/retailers/link-requests', authenticate, getMyCustomerLinkRequests);
+router.delete('/retailers/link-request/:requestId', authenticate, cancelCustomerLinkRequest);
 
 // Protected routes - Orders
 router.get('/customers/me/orders', authenticate, getMyOrders);

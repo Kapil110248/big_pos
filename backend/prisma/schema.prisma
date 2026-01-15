@@ -351,9 +351,12 @@ model ConsumerProfile {
   isVerified       Boolean           @default(false)
   landmark         String?
   membershipType   String            @default("standard")
+  linkedRetailerId Int?              // Enforces ONE Customer -> ONE Retailer linking
   user             User              @relation(fields: [userId], references: [id], onDelete: NoAction, map: "ConsumerProfile_userId_fkey")
+  linkedRetailer   RetailerProfile?  @relation("RetailerCustomers", fields: [linkedRetailerId], references: [id], map: "ConsumerProfile_linkedRetailerId_fkey")
   settings         ConsumerSettings?
   customerOrders   CustomerOrder[]
+  customerLinkRequests CustomerLinkRequest[] @relation("CustomerLinkRequests")
   gasMeters        GasMeter[]
   gasRewards       GasReward[]
   gasTopups        GasTopup[]
@@ -362,6 +365,7 @@ model ConsumerProfile {
   sales            Sale[]
   wallets          Wallet[]
 
+  @@index([linkedRetailerId], map: "ConsumerProfile_linkedRetailerId_fkey")
   @@map("consumerprofile")
 }
 
@@ -661,6 +665,8 @@ model RetailerProfile {
   walletBalance       Float                @default(0)
   isVerified          Boolean              @default(false)
   linkedWholesalerId  Int?                 // Enforces ONE Retailer -> ONE Wholesaler linking
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @default(now()) @updatedAt
   branches            Branch[]
   creditRequests      CreditRequest[]
   nfcCards            NfcCard[]
@@ -675,7 +681,9 @@ model RetailerProfile {
   @@index([linkedWholesalerId], map: "RetailerProfile_linkedWholesalerId_fkey")
   @@map("retailerprofile")
 
-  linkRequests        LinkRequest[]        @relation("RetailerLinkRequests")
+  linkRequests              LinkRequest[]            @relation("RetailerLinkRequests")
+  linkedCustomers           ConsumerProfile[]        @relation("RetailerCustomers")
+  customerLinkRequests      CustomerLinkRequest[]    @relation("RetailerCustomerLinkRequests")
 }
 
 // Link Request - Retailer requests to be linked with a Wholesaler
@@ -696,6 +704,26 @@ model LinkRequest {
   @@unique([retailerId, wholesalerId]) // One request per retailer-wholesaler pair
   @@index([wholesalerId])
   @@map("linkrequest")
+}
+
+// Customer Link Request - Customer requests to be linked with a Retailer
+model CustomerLinkRequest {
+  id              Int               @id @default(autoincrement())
+  customerId      Int
+  retailerId      Int
+  status          String            @default("pending") // pending, approved, rejected
+  message         String?           // Optional message from customer
+  rejectionReason String?           // Reason if rejected
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  respondedAt     DateTime?         // When retailer responded
+
+  customer        ConsumerProfile   @relation("CustomerLinkRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  retailer        RetailerProfile   @relation("RetailerCustomerLinkRequests", fields: [retailerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, retailerId]) // One request per customer-retailer pair
+  @@index([retailerId])
+  @@map("customerlinkrequest")
 }
 
 model SaleItem {
