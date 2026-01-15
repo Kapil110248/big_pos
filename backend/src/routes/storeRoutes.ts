@@ -16,7 +16,8 @@ import {
   confirmDelivery,
   createOrder,
   getActiveLoanLedger,
-  getCreditTransactions
+  getCreditTransactions,
+  getRewardGasBalance
 } from '../controllers/storeController';
 import {
   getCustomerProfile,
@@ -120,5 +121,8 @@ router.get('/loans/eligibility', authenticate, checkLoanEligibility);
 router.post('/loans/apply', authenticate, applyForLoan);
 router.post('/loans/:id/repay', authenticate, repayLoan);
 router.get('/loans/food-credit', authenticate, getFoodCredit);
+
+// Reward Gas
+router.get('/reward-gas/balance', authenticate, getRewardGasBalance);
 
 export default router;

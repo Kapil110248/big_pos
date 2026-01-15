@@ -23,7 +23,10 @@ import {
   approveLinkRequest,
   rejectLinkRequest,
   getLinkedRetailers,
-  unlinkRetailer
+  unlinkRetailer,
+  // Settlement Invoices (Read-only)
+  getSettlementInvoices,
+  getSettlementInvoice
 } from '../controllers/wholesalerController';
 import {
   getRetailers,
@@ -128,5 +131,9 @@ router.post('/link-requests/:requestId/approve', approveLinkRequest);
 router.post('/link-requests/:requestId/reject', rejectLinkRequest);
 router.get('/linked-retailers', getLinkedRetailers);
 router.delete('/linked-retailers/:retailerId', unlinkRetailer);
+
+// Settlement Invoices (Read-only - Admin assigns these)
+router.get('/settlement-invoices', getSettlementInvoices);
+router.get('/settlement-invoices/:id', getSettlementInvoice);
 
 export default router;

@@ -1328,3 +1328,76 @@ export const unlinkRetailer = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// ==========================================
+// SETTLEMENT INVOICES (Read-only for Wholesaler)
+// ==========================================
+
+// Get assigned settlement invoices for this wholesaler
+export const getSettlementInvoices = async (req: AuthRequest, res: Response) => {
+  try {
+    const { month } = req.query;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const where: any = {
+      wholesalerId: wholesalerProfile.id,
+      partyType: 'wholesaler'
+    };
+
+    if (month) {
+      where.settlementMonth = month as string;
+    }
+
+    const invoices = await prisma.settlementInvoice.findMany({
+      where,
+      orderBy: { settlementMonth: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      invoices,
+      total: invoices.length
+    });
+  } catch (error: any) {
+    console.error('Get Settlement Invoices Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get single settlement invoice detail
+export const getSettlementInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) {
+      return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
+    }
+
+    const invoice = await prisma.settlementInvoice.findFirst({
+      where: {
+        id: Number(id),
+        wholesalerId: wholesalerProfile.id
+      }
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, error: 'Invoice not found' });
+    }
+
+    res.json({ success: true, invoice });
+  } catch (error: any) {
+    console.error('Get Settlement Invoice Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
