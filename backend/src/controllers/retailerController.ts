@@ -2120,28 +2120,18 @@ export const approveCustomerLinkRequest = async (req: AuthRequest, res: Response
       return res.status(404).json({ success: false, error: 'Pending request not found' });
     }
 
-    // Check if customer is already linked to another retailer
-    if (request.customer.linkedRetailerId && request.customer.linkedRetailerId !== retailerProfile.id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Customer is already linked to another retailer'
-      });
-    }
+    // NEW: Customer can be linked to MULTIPLE retailers
+    // No need to check if already linked elsewhere - just approve this request
+    // The CustomerLinkRequest table tracks per-retailer approval status
 
-    // Transaction: Update request and link customer
-    await prisma.$transaction([
-      prisma.customerLinkRequest.update({
-        where: { id: request.id },
-        data: {
-          status: 'approved',
-          respondedAt: new Date()
-        }
-      }),
-      prisma.consumerProfile.update({
-        where: { id: request.customerId },
-        data: { linkedRetailerId: retailerProfile.id }
-      })
-    ]);
+    // Update request status to approved
+    await prisma.customerLinkRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'approved',
+        respondedAt: new Date()
+      }
+    });
 
     res.json({ success: true, message: 'Customer link request approved successfully' });
   } catch (error: any) {
